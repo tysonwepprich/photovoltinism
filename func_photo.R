@@ -1,10 +1,10 @@
-# photoperiod function from Forsythe
-# matches 'geosphere' package if no twilight
+# photoperiod function from Forsythe et al. 1995
+# matches 'geosphere' package output if no twilight
 
 lat <- 44.56
 doy <- 226
 # p <- 0.8333 # only option in 'geosphere' package
-p <- 6 # civil twilight as in Grevstad & Coop 2015
+p <- 6 # civil twilight as in Grevstad & Coop 2015, Taylor 1986
 theta <- 0.2163108 + 
   2 * atan(0.9671396 * tan(0.00860 * (doy - 186)))
 phi <- asin(0.39795 * cos(theta))
