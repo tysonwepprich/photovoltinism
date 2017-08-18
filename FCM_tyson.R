@@ -3,17 +3,17 @@
  require(raster)
 
 
-setwd("F:/PRISM/2014")
+# setwd("F:/PRISM/2014") # remove this
+prism_path <- "/data/PRISM/2014"
 Con=function(condition, trueValue, falseValue){
     return(condition * trueValue + (!condition)*falseValue)
     }
-
+source('CDL_funcs.R')
 #Daily PRISM Statistics (degree days and thresholds) for pest development models
 
 #### The old NAPPFAST model parameters:
 #Lower Base temp = 12 degrees C, Upper Base Temp = 40 degrees C  (tmean)
 #growing degree days threshold = 450 DD
-#Exclusion, cold temperature: 5+ days of tmean -3 degrees C or less
 
 ####Pest Specific, Multiple Life Stage Phenology Model Parameters:
 #LDT = lower development threshold, temp at which growth = 0 (using PRISM tmean)
@@ -22,21 +22,34 @@ eggLDT = 11.93
 larvaeLDT = 11.6
 pupaeLDT = 11.9
 adultLDT = 12.2 #for oviposition
-eggDD = 69.3
-larvaeDD = 156
-pupaeDD = 174 #females
-adultDD = 79.2 #time to 50% eggs laid
-#Temperature exclusion threshold parameters
-#LLT = lower lethal temperature (PRISM tmin), ULT = upper lethal temperature (PRISM tmax)
-eggLLT = -3
-eggULT = 41
-larvaeLLT = -12
-larvaeULT = 40
-adultLLT = 0.5
+eggDDmu = 69.3
+eggDDsig = 10
+larvaeDDmu = 156
+larvaeDDsig = 10
+pupaeDDmu = 174 #females
+pupaeDDsig = 10
+adultDDmu = 79.2 #time to 50% eggs laid
+adultDDsig = 5
+
+# choose 'substages' for individual variation
+cohorts <- 7
+
+# simulate parameters for lognormal distribution from estimated Gaussian distributions
+Cohort_Mean <- function(mu, sig, ngroups, nsim){
+  testdist <- rnorm(nsim, mu, sig)
+  lndistrib <- MASS::fitdistr(testdist, "lognormal") 
+  cuts <- Hmisc::cut2(rlnorm(nsim, lndistrib$estimate[1], lndistrib$estimate[2]), 
+                      g = ngroups,
+                      levels.mean = TRUE)
+  as.numeric(as.character(levels(cuts)))
+}
+
+
+region_param <- "OR"
 
 #Search pattern for PRISM daily temperature grids. Load them for processing.
-pattern = paste("(PRISM_tmean_)(.*)(_bil.bil)$", sep="")
-files <- list.files(pattern=pattern, all.files=FALSE, full.names=TRUE)
+pattern = paste("(PRISM_tmin_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
+files <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE)
 #Check that there are enough files for the year
 length(files)
 numlist <- vector()
@@ -52,6 +65,12 @@ filelist <- vector()
 #Initialize Tracking Rasters
 #Read in first raster as a template and intialize tracking rasters
 template <- raster(files[1])
+REGION <- switch(region_param,
+                 "CONUS"        = extent(-125.0,-66.5,24.0,50.0),
+                 "NORTHWEST"    = extent(-125.1,-103.8,40.6,49.2),
+                 "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612))
+template <- crop(raster(files[1]),REGION)
+
 template[!is.na(template)] <- 0
 #Initialize all tracking rasters as zero with the template
 DDaccum <- template
@@ -66,7 +85,7 @@ NumGen <- template
 # be tested for sensitivity by allowing exlusion cells to reset to zero instead.
 
 ###For testing only
-## sublist <- sortedlist[190:220]
+sublist <- sortedlist[151:200]
 ## for (d in sublist) {
 
 for (d in sublist) {
@@ -74,16 +93,19 @@ for (d in sublist) {
     if (.Platform$OS.type == "windows") flush.console()
     Sys.sleep(1)
     #Read in that day's PRISM raster files
-    pattern = paste("(PRISM_tmean_)(.*)(",d,")(_bil.bil)$", sep="")
-    temp <- list.files(pattern=pattern,all.files=FALSE, full.names=TRUE)
-    tmean <- raster(temp)
+    # pattern = paste("(PRISM_tmean_)(.*)(",d,")(_bil.bil)$", sep="")
+    # temp <- list.files(pattern=pattern,all.files=FALSE, full.names=TRUE)
+    # tmean <- raster(temp)
     pattern = paste("(PRISM_tmin_)(.*)(",d,")(_bil.bil)$", sep="")
-    temp <- list.files(pattern=pattern,all.files=FALSE, full.names=TRUE)
-    tmin <- raster(temp)
+    temp <- list.files(path = prism_path, pattern=pattern,all.files=FALSE, full.names=TRUE)
+    tmin <- crop(raster(temp), REGION)
     pattern = paste("(PRISM_tmax_)(.*)(",d,")(_bil.bil)$", sep="")
-    temp <- list.files(pattern=pattern,all.files=FALSE, full.names=TRUE)
-    tmax <- raster(temp)
+    temp <- list.files(path = prism_path, pattern=pattern,all.files=FALSE, full.names=TRUE)
+    tmax <- crop(raster(temp), REGION)
     rm(pattern,temp)
+    
+    # tmean not in GRUB PRISM data, use approximation
+    tmean <- (tmax + tmin) / 2
 
     #Create stage specific lifestage binary rasters
     #Limits operations to a mask for cells that are in that lifestage
@@ -94,22 +116,26 @@ for (d in sublist) {
     LS1 <- Lifestage == 1
     LS2 <- Lifestage == 2
     LS3 <- Lifestage == 3
-    writeRaster(Lifestage,paste("Lifestage_",d,sep=""), format="GTiff",overwrite=TRUE)
-
+    # writeRaster(Lifestage,paste("Lifestage_",d,sep=""), format="GTiff",overwrite=TRUE)
+    doy <- which(sublist == d)
+    if (doy %% 28 == 0){
+      plot(Lifestage)
+    }
+    
     for (i in 1:4) {
       if (i==1){
          #developmental degree days  (zero values for temps below LDT)
          dd0 <- ((tmean > eggLDT) * (tmean - eggLDT))
-         #Calculate lower lethal threshold and exclusion mask
-         eggmin <- tmin > eggLLT
-         eggmin[eggmin==0] <- NA
-         writeRaster(eggmin,paste("EggMin_",d,sep=""), format="GTiff",overwrite=TRUE)
-         #Calculate upper lethal threshold and exclusion mask
-         eggmax <- tmax < eggULT
-         eggmax[eggmax==0] <- NA
-         writeRaster(eggmax,paste("EggMax_",d,sep=""), format="GTiff",overwrite=TRUE)
-         #Apply exclusions and lifestage mask to daily degree day surface
-         dd0 <- dd0 * eggmin * eggmax * LS0
+         # #Calculate lower lethal threshold and exclusion mask
+         # eggmin <- tmin > eggLLT
+         # eggmin[eggmin==0] <- NA
+         # writeRaster(eggmin,paste("EggMin_",d,sep=""), format="GTiff",overwrite=TRUE)
+         # #Calculate upper lethal threshold and exclusion mask
+         # eggmax <- tmax < eggULT
+         # eggmax[eggmax==0] <- NA
+         # writeRaster(eggmax,paste("EggMax_",d,sep=""), format="GTiff",overwrite=TRUE)
+         # #Apply exclusions and lifestage mask to daily degree day surface
+         # dd0 <- dd0 * eggmin * eggmax * LS0
 
          #Accumulate degree days, if dd0 > 0 otherwise exclusion masks get applied to this generation.
          #count cells with dd>0
@@ -118,7 +144,7 @@ for (d in sublist) {
            DDaccum <- DDaccum + dd0
            #Calculate lifestage progression: for dd accum in correct lifestage, is it >= egg DD threshold?
            progress0 <- (DDaccum * LS0) >= eggDD
-           writeRaster(progress0,paste("Progress0_",d,sep=""), format="GTiff",overwrite=TRUE)
+           # writeRaster(progress0,paste("Progress0_",d,sep=""), format="GTiff",overwrite=TRUE)
            Lifestage <- Con(LS0 == 1 & progress0 == 1, 1, Lifestage)
            #Reset the DDaccum cells to zero for cells that progressed to next lifestage
            DDaccum <- Con(progress0 == 0, DDaccum, 0)
@@ -127,16 +153,16 @@ for (d in sublist) {
       } else if (i == 2) {
          #developmental degree days
          dd1 <- ((tmean > larvaeLDT) * (tmean - larvaeLDT))
-         #Calculate lower lethal threshold and exclusion mask
-         larmin <- tmin > larvaeLLT
-         larmin[larmin==0] <- NA
-         writeRaster(larmin,paste("Larmin_",d,sep=""), format="GTiff",overwrite=TRUE)
-         #Calculate upper lethal threshold and exclusion mask
-         larmax <- tmax < larvaeULT
-         larmax[larmax == 0] <- NA
-         writeRaster(larmax,paste("Larmax_",d,sep=""), format="GTiff",overwrite=TRUE)
-         #Apply exclusions and lifestage mask to daily degree day surface and limit to correct stage
-         dd1 <- dd1 * larmin * larmax * LS1
+         # #Calculate lower lethal threshold and exclusion mask
+         # larmin <- tmin > larvaeLLT
+         # larmin[larmin==0] <- NA
+         # writeRaster(larmin,paste("Larmin_",d,sep=""), format="GTiff",overwrite=TRUE)
+         # #Calculate upper lethal threshold and exclusion mask
+         # larmax <- tmax < larvaeULT
+         # larmax[larmax == 0] <- NA
+         # writeRaster(larmax,paste("Larmax_",d,sep=""), format="GTiff",overwrite=TRUE)
+         # #Apply exclusions and lifestage mask to daily degree day surface and limit to correct stage
+         # dd1 <- dd1 * larmin * larmax * LS1
 
          #Accumulate degree days, if dd0 > 0 otherwise exclusion masks get applied to this generation.
          dd.stat <- cellStats(dd1,stat='max',na.rm=TRUE)
@@ -144,7 +170,7 @@ for (d in sublist) {
            DDaccum <- DDaccum + dd1
            #Calculate lifestage progression: for dd accum in correct lifestage, is it >= larvae DD threshold?
            progress1 <- (DDaccum * LS1) >= larvaeDD
-           writeRaster(progress1,paste("Progress1_",d,sep=""), format="GTiff",overwrite=TRUE)
+           # writeRaster(progress1,paste("Progress1_",d,sep=""), format="GTiff",overwrite=TRUE)
            Lifestage <- Con(LS1 == 1 & progress1 == 1, 2, Lifestage)
            #Reset the DDaccum cells to zero for cells that progressed to next lifestage
            DDaccum <- Con(progress1 == 0, DDaccum, 0)
@@ -162,7 +188,7 @@ for (d in sublist) {
            DDaccum <- DDaccum + dd2
            #Calculate lifestage progression: for dd accum in correct lifestage, is it >= pupae DD threshold?
            progress2 <- (DDaccum * LS2) >= pupaeDD
-           writeRaster(progress2,paste("Progress2_",d,sep=""), format="GTiff",overwrite=TRUE)
+           # writeRaster(progress2,paste("Progress2_",d,sep=""), format="GTiff",overwrite=TRUE)
            Lifestage <- Con(LS2 == 1 & progress2 == 1, 3, Lifestage)
            #Reset the DDaccum cells to zero for cells that progressed to next lifestage
            DDaccum <- Con(progress2 == 0, DDaccum, 0)
@@ -171,12 +197,12 @@ for (d in sublist) {
       } else { #adult stage, or time to 50% oviposition
          #developmental degree days
          dd3 <- ((tmean > adultLDT) * (tmean - adultLDT))
-         #Calculate lower lethal threshold and exclusion mask
-         admin <- tmin > adultLLT
-         admin[admin==0] <- NA
-         writeRaster(admin,paste("Admin_",d,sep=""), format="GTiff",overwrite=TRUE)
-         #Apply exclusions and lifestage mask to daily degree day surface
-         dd3 <- dd3 * admin * LS3
+         # #Calculate lower lethal threshold and exclusion mask
+         # admin <- tmin > adultLLT
+         # admin[admin==0] <- NA
+         # writeRaster(admin,paste("Admin_",d,sep=""), format="GTiff",overwrite=TRUE)
+         # #Apply exclusions and lifestage mask to daily degree day surface
+         # dd3 <- dd3 * admin * LS3
 
          #Accumulate degree days, if dd0 > 0 otherwise exclusion masks get applied to this generation.
          dd.stat <- cellStats(dd3,stat='max',na.rm=TRUE)
@@ -184,7 +210,7 @@ for (d in sublist) {
            DDaccum <- DDaccum + dd3
            #Calculate lifestage progression: for dd accum in correct lifestage, is it >= adult DD threshold?
            progress3 <- (DDaccum * LS3) >= adultDD
-           writeRaster(progress3,paste("Progress3_",d,sep=""), format="GTiff",overwrite=TRUE)
+           # writeRaster(progress3,paste("Progress3_",d,sep=""), format="GTiff",overwrite=TRUE)
            #Reset the DDaccum cells to zero for cells that progressed to next lifestage
            DDaccum <- Con(progress3 == 1,0, DDaccum)
            #Remove masking effect from progress counter so it doesn't perpetuate through NumGen raster
@@ -196,13 +222,15 @@ for (d in sublist) {
 
            #Increment NumGen + 1
            NumGen <- NumGen + progress3
-           writeRaster(NumGen,paste("NumGen",d,sep=""), format="GTiff",overwrite=TRUE)
+           # writeRaster(NumGen,paste("NumGen",d,sep=""), format="GTiff",overwrite=TRUE)
          }
       }
     }
 }
 
-writeRaster(NumGen,"FCM_NumGenerations.tif", format="GTiff",overwrite=TRUE)
+ # writeRaster(NumGen,"FCM_NumGenerations.tif", format="GTiff",overwrite=TRUE)
+plot(NumGen)
+
 #Possibility to calculate any number of outputs. This example was for 2014
 #data only, but will want to look at multi-year calculations and how we
 #can express uncertainty (annual variability) for more static risk maps.
