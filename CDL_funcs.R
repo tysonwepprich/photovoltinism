@@ -59,3 +59,46 @@ RasterPhoto <- function(rast, doy){
   outrast <- rast + outrast
 }
 
+
+
+# from https://stackoverflow.com/questions/29784829/r-raster-package-split-image-into-multiples
+
+# The function spatially aggregates the original raster
+# it turns each aggregated cell into a polygon
+# then the extent of each polygon is used to crop
+# the original raster.
+# The function returns a list with all the pieces
+# in case you want to keep them in the memory. 
+# it saves and plots each piece
+# The arguments are:
+# raster = raster to be chopped            (raster object)
+# ppside = pieces per side                 (integer)
+# save   = write raster                    (TRUE or FALSE)
+# plot   = do you want to plot the output? (TRUE or FALSE)
+SplitRas <- function(raster,ppside,save,plot){
+  h        <- ceiling(ncol(raster)/ppside)
+  v        <- ceiling(nrow(raster)/ppside)
+  agg      <- aggregate(raster,fact=c(h,v))
+  agg[]    <- 1:ncell(agg)
+  agg_poly <- rasterToPolygons(agg)
+  names(agg_poly) <- "polis"
+  r_list <- list()
+  for(i in 1:ncell(agg)){
+    e1          <- extent(agg_poly[agg_poly$polis==i,])
+    r_list[[i]] <- crop(raster,e1)
+  }
+  if(save==T){
+    for(i in 1:length(r_list)){
+      writeRaster(r_list[[i]],filename=paste("SplitRas",i,sep=""),
+                  format="GTiff",datatype="FLT4S",overwrite=TRUE)  
+    }
+  }
+  if(plot==T){
+    par(mfrow=c(ppside,ppside))
+    for(i in 1:length(r_list)){
+      plot(r_list[[i]],axes=F,legend=F,bty="n",box=FALSE)  
+    }
+  }
+  return(r_list)
+}
+

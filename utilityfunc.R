@@ -25,7 +25,7 @@
 }
 
 # shorthand
-lsos <- function(..., n=10) {
+lsos <- function(..., n=50) {
   .ls.objects(..., order.by="Size", decreasing=TRUE, head=TRUE, n=n)
 }
 
