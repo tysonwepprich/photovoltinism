@@ -1,12 +1,23 @@
 # Take Gerricke's FCM code and convert to Galerucella parameters
 # Test out photoperiod and substages with constrained extext (Oregon)
 
+# SLOW, 
+# ways to speed up, reduce memory load
+# 1. datatype for raster to integer instead of floating point, 
+# would need to multiply PRISM data to remove decimals
+
+
+
+# TODO
+# 1. Write file names with 3 digits so sorted the right way
+# formatC(SiteID, width = 3, format = "d", flag = "0")
+
 
 library(sp)
 library(rgdal)
 library(raster)
 
-rasterOptions(overwrite = TRUE, 
+rasterOptions(overwrite = FALSE, 
               chunksize = 1e+08,
               maxmemory = 1e+09)
 
@@ -14,7 +25,7 @@ rasterOptions(overwrite = TRUE,
 library(doRNG)
 library(foreach) # for parallelized loops
 library(doMC)    # parallel backend for foreach
-ncores <- 25
+ncores <- 16
 registerDoMC(cores = ncores)
 
 # setwd("F:/PRISM/2014") # remove this
@@ -27,14 +38,14 @@ source('CDL_funcs.R')
 ####Pest Specific, Multiple Life Stage Phenology Model Parameters:
 #LDT = lower development threshold, temp at which growth = 0 (using PRISM tmean)
 #DD = degree days, number of cumulative heat units to complete that lifestage
-start_doy  <- 60
-end_doy    <- 300
+start_doy  <- 200
+end_doy    <- 210
 stgorder   <- c("OA","E","L","P","A","F")
 photo_sens <- 3 #c(-1, 3) # integer life stages for now
 CDL_mu        <- 14.5
 model_CDL  <- 1 # if 1, model photoperiod decision
 owstage    <- "OA"
-OWadultDD_mu  <- 108 # text OW stage dev 39 DD "post diapause"
+OWadultDD_mu  <- 10 #108 # text OW stage dev 39 DD "post diapause"
 calctype   <-"triangle"
 eggLDT     <- 10
 eggUDT     <- 35  #
@@ -44,15 +55,15 @@ pupaeLDT   <- 10
 pupaeUDT   <- 35
 adultLDT   <- 13.5 #for oviposition
 adultUDT   <- 35
-eggDD_mu = 93.3
-larvaeDD_mu = 136.4 # 46.9 + 45.8 + 43.7 instars
-pupDD_mu = 137.7 
-adultDD_mu = 125.9 #time to oviposition
+eggDD_mu = 10 #93.3
+larvaeDD_mu = 20 #136.4 # 46.9 + 45.8 + 43.7 instars
+pupDD_mu = 20 #137.7 
+adultDD_mu = 20 #125.9 #time to oviposition
 region_param <- "OR"
 
 # introducing individual variation, tracked with simulations
 nday <- length(start_doy:end_doy)
-nsim <- 10
+nsim <- 5
 DDsd <- 5
 CDLsd <- .2
 vary_indiv <- 1 # turn on indiv. variation
@@ -502,33 +513,53 @@ foreach(map = 1:length(SplitMap), .packages= "raster") %dopar% {
   
   #saving files by layer makes a lot of files!
   #each band is a day, first index is map chunk index
+  mapcode <- formatC(map, width = 3, format = "d", flag = "0")
   
-  NumGenFile <- writeRaster(AggNumGen, filename = paste(newname, "/NumGen_", map, sep = ""),
-                            bylayer = TRUE, overwrite = TRUE, format = "GTiff")
-  LS0File <- writeRaster(AggLS0, filename = paste(newname, "/LS0_", map, sep = ""),
-                         bylayer = TRUE, overwrite = TRUE, format = "GTiff")
-  LS1File <- writeRaster(AggLS1, filename = paste(newname, "/LS1_", map, sep = ""),
-                         bylayer = TRUE, overwrite = TRUE, format = "GTiff")
-  LS2File <- writeRaster(AggLS2, filename = paste(newname, "/LS2_", map, sep = ""),
-                         bylayer = TRUE, overwrite = TRUE, format = "GTiff")
-  LS3File <- writeRaster(AggLS3, filename = paste(newname, "/LS3_", map, sep = ""),
-                         bylayer = TRUE, overwrite = TRUE, format = "GTiff")
-  LS4File <- writeRaster(AggLS4, filename = paste(newname, "/LS4_", map, sep = ""),
-                         bylayer = TRUE, overwrite = TRUE, format = "GTiff")
+  NumGenFile <- writeRaster(AggNumGen, filename = paste(newname, "/NumGen_", mapcode, sep = ""),
+                             overwrite = TRUE)
+  LS0File <- writeRaster(AggLS0, filename = paste(newname, "/LS0_", mapcode, sep = ""),
+                          overwrite = TRUE)
+  LS1File <- writeRaster(AggLS1, filename = paste(newname, "/LS1_", mapcode, sep = ""),
+                          overwrite = TRUE)
+  LS2File <- writeRaster(AggLS2, filename = paste(newname, "/LS2_", mapcode, sep = ""),
+                          overwrite = TRUE)
+  LS3File <- writeRaster(AggLS3, filename = paste(newname, "/LS3_", mapcode, sep = ""),
+                          overwrite = TRUE)
+  LS4File <- writeRaster(AggLS4, filename = paste(newname, "/LS4_", mapcode, sep = ""),
+                          overwrite = TRUE)
   
   
 } #foreach map chunk loop
 
 # then have to retrieve files and mosaic back together
-test <- raster("LS0_1.grd")
+returnwd <- getwd()
+setwd(newname)
+
+f <-list.files()
+rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
+
+ls <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1])
+maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,2])
+maps <- gsub(pattern = ".grd", replacement = "", x = maps)
+
+for (i in ls){
+  fs <- rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)]
+  bricklist <- list()
+  for (m in 1:length(fs)){
+    bricklist[[m]] <- brick(fs[m])
+  }
+  
+  bricklist$filename <- paste(i, "all", sep = "_")
+  bricklist$overwrite <- TRUE
+  test <- do.call(merge, bricklist)
+}
 
 
-resfiles <- list.files(newname)
+cleanup <- list.files()
+cleanup <- cleanup[-grep("all", x = cleanup)]
+lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
 
 
-uniqLS <- data.frame(stringr::str_split_fixed(string = resfiles, 
-                                   pattern = "_", 
-                                   n = 3))
-names(uniqLS) <- c("LS", "map", "doy")
-uniqLS$doy <- stringr::str_split_fixed(uniqLS$doy, ".tif", n = 2)[,1]
+
+setwd(returnwd)
 
