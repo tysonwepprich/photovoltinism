@@ -5,12 +5,15 @@
 # ways to speed up, reduce memory load
 # 1. datatype for raster to integer instead of floating point, 
 # would need to multiply PRISM data to remove decimals
+# 2. multithread by year
 
 
 
 # TODO
 # 1. Write file names with 3 digits so sorted the right way
 # formatC(SiteID, width = 3, format = "d", flag = "0")
+# 2. Better strategy for parallel, as now with map chunks, no benefit 
+# of running 36 cores vs 16 in some tests
 
 
 library(sp)
@@ -38,32 +41,32 @@ source('CDL_funcs.R')
 ####Pest Specific, Multiple Life Stage Phenology Model Parameters:
 #LDT = lower development threshold, temp at which growth = 0 (using PRISM tmean)
 #DD = degree days, number of cumulative heat units to complete that lifestage
-start_doy  <- 200
-end_doy    <- 210
+start_doy  <- 1
+end_doy    <- 365
 stgorder   <- c("OA","E","L","P","A","F")
 photo_sens <- 3 #c(-1, 3) # integer life stages for now
-CDL_mu        <- 14.5
+CDL_mu        <- 15.25
 model_CDL  <- 1 # if 1, model photoperiod decision
 owstage    <- "OA"
-OWadultDD_mu  <- 10 #108 # text OW stage dev 39 DD "post diapause"
+OWadultDD_mu  <- 100 #108 # text OW stage dev 39 DD "post diapause"
 calctype   <-"triangle"
 eggLDT     <- 10
-eggUDT     <- 35  #
+eggUDT     <- 37.8  #
 larvaeLDT  <- 10
-larvaeUDT  <- 35  #upper dev. threshold-need to verify
+larvaeUDT  <- 37.8  #upper dev. threshold-need to verify
 pupaeLDT   <- 10
-pupaeUDT   <- 35
-adultLDT   <- 13.5 #for oviposition
-adultUDT   <- 35
-eggDD_mu = 10 #93.3
-larvaeDD_mu = 20 #136.4 # 46.9 + 45.8 + 43.7 instars
-pupDD_mu = 20 #137.7 
-adultDD_mu = 20 #125.9 #time to oviposition
-region_param <- "OR"
+pupaeUDT   <- 37.8
+adultLDT   <- 10 #for oviposition
+adultUDT   <- 37.8
+eggDD_mu = 100 #93.3
+larvaeDD_mu = 140 #136.4 # 46.9 + 45.8 + 43.7 instars
+pupDD_mu = 140 #137.7 
+adultDD_mu = 130 #125.9 #time to oviposition
+region_param <- "CONUS"
 
 # introducing individual variation, tracked with simulations
 nday <- length(start_doy:end_doy)
-nsim <- 5
+nsim <- 100
 DDsd <- 5
 CDLsd <- .2
 vary_indiv <- 1 # turn on indiv. variation
@@ -114,6 +117,7 @@ if (vary_indiv == 1){
   adultDD = rnorm(nsim, mean = adultDD_mu, sd = DDsd)
   OWadultDD = rnorm(nsim, mean = OWadultDD_mu, sd = DDsd)
   CDL <- rnorm(nsim, mean = CDL_mu, sd = CDLsd)
+  
 }else{ # doesn't make sense to do this with foreach if no variation, though!
   eggDD = eggDD_mu
   larvaeDD = larvaeDD_mu
@@ -131,7 +135,7 @@ newname <- paste("run", gsub("-", "",
                              fixed = TRUE), sep = "")
 dir.create(newname)
 
-
+system.time({
 foreach(map = 1:length(SplitMap), .packages= "raster") %dopar% {
   print(map)
   template <- SplitMap[[map]]
@@ -473,11 +477,14 @@ foreach(map = 1:length(SplitMap), .packages= "raster") %dopar% {
             LS4stack <- LS4
             
           } else {
+           test <- system.time({
             LS0stack <- stack(LS0stack, LS0)
             LS1stack <- stack(LS1stack, LS1)
             LS2stack <- stack(LS2stack, LS2)
             LS3stack <- stack(LS3stack, LS3)
-            LS4stack <- stack(LS4stack, LS4)
+            LS4stack <- stack(LS4stack, LS4) 
+            })
+           print(test)
           }
           
           if (!exists("NumGenstack")){
@@ -559,7 +566,115 @@ cleanup <- list.files()
 cleanup <- cleanup[-grep("all", x = cleanup)]
 lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
 
-
-
 setwd(returnwd)
+
+})
+
+
+# 56 hours for 100 sims of CONUS with 16 cores
+
+
+saveRDS(params, file = paste(newname, "/params.rds", sep = ""))
+
+# map of Number of Generations
+# decimals indicate some simulations reached next integer
+res <- brick(paste(newname, "/", "NumGen_all.grd", sep = ""))
+res <- res[[365]]/100
+
+# map of diapause
+res <- brick(paste(newname, "/", "LS4_all.grd", sep = ""))
+plot(res[[seq(50, 350, 50)]])
+
+# map of lifestages
+res <- brick(paste(newname, "/", "LS0_all.grd", sep = ""))
+plot(res[[seq(100, 300, 40)]])
+
+
+#TODO pretty raster facets with common scale, use ggplot or rastervis
+#include zoom of NW
+
+library(ggplot2)
+library(viridis)
+
+df = as.data.frame(res, xy=TRUE)
+names(df)[3] <- "Voltinism"
+test <- ggplot(df, aes(x, y, fill = Voltinism)) +
+  geom_raster() +
+  scale_fill_viridis(na.value = "white") + 
+  theme_bw() +
+  ggtitle("Voltinism at end of year")
+test
+ggsave(filename = "voltinism.png", plot = test, device = "png", 
+       width = 6, height = 4)
+
+# loop to grab all lifestage results on a certain day to plot together
+# save in one giant data.frame to use for plots
+returnwd <- getwd()
+setwd(newname)
+
+f <-list.files()
+days <- seq(35, 365, 30)
+rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
+dflist <- list()
+for (i in rasfiles){
+  res <- brick(i)
+  ls <- unique(stringr::str_split_fixed(i, pattern = "_", 2)[,1])
+  for (j in days){
+    df <- as.data.frame(res[[j]], xy=TRUE)
+    names(df)[3] <- "Percent_of_simulations"
+    df$doy <- j
+    df$lifestage <- ls
+    dflist[[length(dflist)+1]] <- df
+  }
+}
+resdf <- dplyr::bind_rows(dflist)
+names(resdf)[3] <- "Proportion"
+setwd(returnwd)
+
+nsims <- 100
+library(ggplot2)
+library(viridis)
+library(gridExtra)
+library(grid)
+library(dplyr)
+pltlist <- list()
+lifestages <- unique(resdf$lifestage)
+ls_labels <- c("egg", "larva", "pupa", "adult", "diapause", "voltinism")
+for (d in days){
+  for (p in 1:length(lifestages)){
+    pltdf <- resdf %>% 
+      filter(lifestage == lifestages[p], 
+             doy == d)
+    if (lifestages[p] == "NumGen"){
+      pltdf <- pltdf %>% 
+        mutate(Voltinism = Proportion / nsims)
+      pltlist[[length(pltlist)+1]] <- ggplot(pltdf, aes(x, y, fill = Voltinism)) +
+        geom_raster() +
+        scale_fill_viridis(na.value = "white") + 
+        theme_bw() +
+        ggtitle(ls_labels[p])
+    }else{
+      pltdf <- pltdf %>% 
+        mutate(Proportion = Proportion / nsims)
+      pltlist[[length(pltlist)+1]] <- ggplot(pltdf, aes(x, y, fill = Proportion)) +
+        geom_raster() +
+        scale_fill_viridis(na.value = "white") + 
+        theme_bw() +
+        ggtitle(ls_labels[p])
+    }  
+  }
+}
+
+for (i in 1:length(days)){
+  index <- (i*length(lifestages) - (length(lifestages) - 1)):(i*length(lifestages))
+  plt <- grid.arrange(grobs = pltlist[index],
+                      ncol = 2,
+                      top = paste("DOY", days[i], sep = " "))
+  ggsave(paste("DOY", days [i], ".png", sep = ""),
+         plot = plt, device = "png", width = 12, height = 12, units = "in")
+}
+
+
+
+
 

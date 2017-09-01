@@ -37,7 +37,7 @@ TriDD=function(tmax, tmin, LDT, UDT){
 
 # photoperiod functions
 
-photoperiod <- function(lat, doy, p = 6){
+photoperiod <- function(lat, doy, p = 1.5){
   theta <- 0.2163108 + 
     2 * atan(0.9671396 * tan(0.00860 * (doy - 186)))
   phi <- asin(0.39795 * cos(theta))
@@ -89,8 +89,9 @@ SplitRas <- function(raster,ppside,save,plot){
   }
   if(save==T){
     for(i in 1:length(r_list)){
-      writeRaster(r_list[[i]],filename=paste("SplitRas",i,sep=""),
-                  format="GTiff",datatype="FLT4S",overwrite=TRUE)  
+      ii <- formatC(i, width = 2, format = "d", flag = "0")
+      writeRaster(r_list[[i]],filename=paste("SplitRas", ii, sep=""),
+                  format="GTiff", datatype="FLT4S", overwrite=TRUE)  
     }
   }
   if(plot==T){
