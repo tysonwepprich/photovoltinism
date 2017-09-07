@@ -14,6 +14,8 @@
 # formatC(SiteID, width = 3, format = "d", flag = "0")
 # 2. Better strategy for parallel, as now with map chunks, no benefit 
 # of running 36 cores vs 16 in some tests
+# 3. Output has strange shoreline edges with no results. Not NA, but
+# also does not advance lifestages. Issue with PRISM or raster?
 
 
 library(sp)
@@ -28,11 +30,14 @@ rasterOptions(overwrite = FALSE,
 library(doRNG)
 library(foreach) # for parallelized loops
 library(doMC)    # parallel backend for foreach
-ncores <- 16
-registerDoMC(cores = ncores)
+ncores <- 1
+# registerDoMC(cores = ncores)
 
 # setwd("F:/PRISM/2014") # remove this
 prism_path <- "/data/PRISM/2014"
+# prism_path <- "/data/PRISM/"
+# years <- c(2007:2013)
+
 
 source('CDL_funcs.R')
 #Daily PRISM Statistics (degree days and thresholds) for pest development models
@@ -41,11 +46,11 @@ source('CDL_funcs.R')
 ####Pest Specific, Multiple Life Stage Phenology Model Parameters:
 #LDT = lower development threshold, temp at which growth = 0 (using PRISM tmean)
 #DD = degree days, number of cumulative heat units to complete that lifestage
-start_doy  <- 1
-end_doy    <- 365
+start_doy  <- 200
+end_doy    <- 250
 stgorder   <- c("OA","E","L","P","A","F")
 photo_sens <- 3 #c(-1, 3) # integer life stages for now
-CDL_mu        <- 15.25
+CDL_mu        <- 14.25
 model_CDL  <- 1 # if 1, model photoperiod decision
 owstage    <- "OA"
 OWadultDD_mu  <- 100 #108 # text OW stage dev 39 DD "post diapause"
@@ -62,14 +67,16 @@ eggDD_mu = 100 #93.3
 larvaeDD_mu = 140 #136.4 # 46.9 + 45.8 + 43.7 instars
 pupDD_mu = 140 #137.7 
 adultDD_mu = 130 #125.9 #time to oviposition
-region_param <- "CONUS"
+region_param <- "TEST"
 
 # introducing individual variation, tracked with simulations
 nday <- length(start_doy:end_doy)
-nsim <- 100
-DDsd <- 5
-CDLsd <- .2
+nsim <- 7 # for now, use square number
+DD_sd <- 10
+CDL_sd <- .1
 vary_indiv <- 1 # turn on indiv. variation
+# Gaussian quadrature to assign number/weights for substages
+substages <- gauss.hermite(11, iterlim = 50)[3:9, ] # remove ends with near zero weights
 
 #Search pattern for PRISM daily temperature grids. Load them for processing.
 pattern = paste("(PRISM_tmin_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
@@ -92,7 +99,8 @@ template <- raster(files[1])
 REGION <- switch(region_param,
                  "CONUS"        = extent(-125.0,-66.5,24.0,50.0),
                  "NORTHWEST"    = extent(-125.1,-103.8,40.6,49.2),
-                 "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612))
+                 "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612),
+                 "TEST"         = extent(-124, -122.5, 44, 45))
 template <- crop(raster(files[1]),REGION)
 
 # allocated RasterBrick to store simulation results
@@ -111,13 +119,19 @@ SplitMap <- SplitRas(template, ppside = floor(sqrt(ncores)), TRUE, FALSE)
 set.seed(1234)
 # Draw new params for each simulation run
 if (vary_indiv == 1){
-  eggDD = rnorm(nsim, mean = eggDD_mu, sd = DDsd)
-  larvaeDD = rnorm(nsim, mean = larvaeDD_mu, sd = DDsd)
-  pupDD = rnorm(nsim, mean = pupDD_mu, sd = DDsd)
-  adultDD = rnorm(nsim, mean = adultDD_mu, sd = DDsd)
-  OWadultDD = rnorm(nsim, mean = OWadultDD_mu, sd = DDsd)
-  CDL <- rnorm(nsim, mean = CDL_mu, sd = CDLsd)
-  
+  # eggDD = rnorm(nsim, mean = eggDD_mu, sd = DDsd)
+  # larvaeDD = rnorm(nsim, mean = larvaeDD_mu, sd = DDsd)
+  # pupDD = rnorm(nsim, mean = pupDD_mu, sd = DDsd)
+  # adultDD = rnorm(nsim, mean = adultDD_mu, sd = DDsd)
+  # OWadultDD = rnorm(nsim, mean = OWadultDD_mu, sd = DDsd)
+  # CDL <- rnorm(nsim, mean = CDL_mu, sd = CDLsd)
+  eggDD = eggDD_mu
+  larvaeDD = larvaeDD_mu
+  pupDD = pupDD_mu
+  adultDD = adultDD_mu
+  OWadultDD = substages[, 1] * DD_sd + OWadultDD_mu
+  # CDL <- substages[, 1] * CDL_sd + CDL_mu
+  CDL <- CDL_mu
 }else{ # doesn't make sense to do this with foreach if no variation, though!
   eggDD = eggDD_mu
   larvaeDD = larvaeDD_mu
@@ -127,6 +141,13 @@ if (vary_indiv == 1){
   CDL <- CDL_mu
 }
 params <- data.frame(eggDD, larvaeDD, pupDD, adultDD, OWadultDD, CDL)
+# params <- data.frame(eggDD, larvaeDD, pupDD, adultDD, OWadultDD)
+
+# idea was to cross CDL variation with GDD variation, but still 
+# runs into issue of correlations between life stage speed.
+# also, will still be too many simulations if we want speed
+# params <- do.call("rbind", replicate(n = length(CDL), params, simplify = FALSE))
+# params$CDL <- rep(CDL, each = length(eggDD))
 
 newname <- paste("run", gsub("-", "", 
                              gsub(" ", "_", 
@@ -470,27 +491,35 @@ foreach(map = 1:length(SplitMap), .packages= "raster") %dopar% {
           
           # stack each days raster
           if (!exists("LS0stack")){
-            LS0stack <- LS0
-            LS1stack <- LS1
-            LS2stack <- LS2
-            LS3stack <- LS3
-            LS4stack <- LS4
+            LS0stack <- stack(LS0)
+            LS1stack <- stack(LS1)
+            LS2stack <- stack(LS2)
+            LS3stack <- stack(LS3)
+            LS4stack <- stack(LS4)
             
           } else {
-           test <- system.time({
-            LS0stack <- stack(LS0stack, LS0)
-            LS1stack <- stack(LS1stack, LS1)
-            LS2stack <- stack(LS2stack, LS2)
-            LS3stack <- stack(LS3stack, LS3)
-            LS4stack <- stack(LS4stack, LS4) 
-            })
-           print(test)
+            # too slow
+           # test <- system.time({
+           #  LS0stack <- stack(LS0stack, LS0)
+           #  LS1stack <- stack(LS1stack, LS1)
+           #  LS2stack <- stack(LS2stack, LS2)
+           #  LS3stack <- stack(LS3stack, LS3)
+           #  LS4stack <- stack(LS4stack, LS4) 
+           #  })
+           # print(test)
+            # faster but dangerous, doesn't check extent in each file
+             LS0stack@layers[[index]] <- LS0
+             LS1stack@layers[[index]] <- LS1
+             LS2stack@layers[[index]] <- LS2
+             LS3stack@layers[[index]] <- LS3
+             LS4stack@layers[[index]] <- LS4
           }
           
           if (!exists("NumGenstack")){
-            NumGenstack <- NumGen
+            NumGenstack <- stack(NumGen)
           } else {
-            NumGenstack <- stack(NumGenstack, NumGen)
+            # NumGenstack <- stack(NumGenstack, NumGen)
+            NumGenstack@layers[[index]] <- NumGen
           }
           # # new Nov 2015 tally stages plus gens
           # StageCount <- Lifestage + (NumGen * 4)
@@ -587,7 +616,7 @@ plot(res[[seq(50, 350, 50)]])
 
 # map of lifestages
 res <- brick(paste(newname, "/", "LS0_all.grd", sep = ""))
-plot(res[[seq(100, 300, 40)]])
+plot(res[[seq(10, 50, 5)]])
 
 
 #TODO pretty raster facets with common scale, use ggplot or rastervis
@@ -613,7 +642,8 @@ returnwd <- getwd()
 setwd(newname)
 
 f <-list.files()
-days <- seq(35, 365, 30)
+# days <- seq(35, 365, 30)
+days <- seq(10, 50, 10)
 rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
 dflist <- list()
 for (i in rasfiles){
