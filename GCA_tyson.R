@@ -7,16 +7,27 @@
 # would need to multiply PRISM data to remove decimals
 # 2. multithread by year
 
-
+# NW, 10 days, 7 substages
+# 36: 332
+# 16: 272
+# 1: 289
+# 1 (DT_same): 169
+# 1 (DT_same, sims parallel): 34 ---- with 365 days, only 710!
 
 # TODO
 # 1. Write file names with 3 digits so sorted the right way
 # formatC(SiteID, width = 3, format = "d", flag = "0")
-# 2. Better strategy for parallel, as now with map chunks, no benefit 
-# of running 36 cores vs 16 in some tests
+# 2. Better strategy for parallel, now with map chunks there's no benefit 
+# of running 36 cores vs 16 in some tests. 
 # 3. Output has strange shoreline edges with no results. Not NA, but
 # also does not advance lifestages. Issue with PRISM or raster?
-
+# 4. Multiple years for GDD to match with 2015 paper, possibly store
+# all Tmax/Tmin PRISM data in one RasterBrick to speed cropping
+# 5. Photoperiod threshold flexibility/logistic regression probability
+# 6. Pest Event Maps
+# 7. Tracking partial generations due to diapause for each substage, 
+# could be done with one raster per substage with % population removed?
+# 8. Diapause stage leading to overwintering stage (using same raster?)
 
 library(sp)
 library(rgdal)
@@ -30,13 +41,20 @@ rasterOptions(overwrite = FALSE,
 library(doRNG)
 library(foreach) # for parallelized loops
 library(doMC)    # parallel backend for foreach
-ncores <- 1
-# registerDoMC(cores = ncores)
+
 
 # setwd("F:/PRISM/2014") # remove this
 prism_path <- "/data/PRISM/2014"
 # prism_path <- "/data/PRISM/"
-# years <- c(2007:2013)
+
+# TODO loop with multiple years
+# OR take years and extract "average" GDD accumulation
+prism_path <- "/data/PRISM/"
+years <- c(2007:2013)
+for (yr in years){
+  path <- paste(prism_path, yr, sep = "/")
+  
+}
 
 
 source('CDL_funcs.R')
@@ -46,8 +64,8 @@ source('CDL_funcs.R')
 ####Pest Specific, Multiple Life Stage Phenology Model Parameters:
 #LDT = lower development threshold, temp at which growth = 0 (using PRISM tmean)
 #DD = degree days, number of cumulative heat units to complete that lifestage
-start_doy  <- 200
-end_doy    <- 250
+start_doy  <- 1
+end_doy    <- 365
 stgorder   <- c("OA","E","L","P","A","F")
 photo_sens <- 3 #c(-1, 3) # integer life stages for now
 CDL_mu        <- 14.25
@@ -67,7 +85,7 @@ eggDD_mu = 100 #93.3
 larvaeDD_mu = 140 #136.4 # 46.9 + 45.8 + 43.7 instars
 pupDD_mu = 140 #137.7 
 adultDD_mu = 130 #125.9 #time to oviposition
-region_param <- "TEST"
+region_param <- "NORTHWEST"
 
 # introducing individual variation, tracked with simulations
 nday <- length(start_doy:end_doy)
@@ -77,6 +95,12 @@ CDL_sd <- .1
 vary_indiv <- 1 # turn on indiv. variation
 # Gaussian quadrature to assign number/weights for substages
 substages <- gauss.hermite(11, iterlim = 50)[3:9, ] # remove ends with near zero weights
+
+# try to run sims in parallel rather than splitting map
+ncores <- nsim
+registerDoMC(cores = ncores)
+
+
 
 #Search pattern for PRISM daily temperature grids. Load them for processing.
 pattern = paste("(PRISM_tmin_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
@@ -88,6 +112,23 @@ for (file in files) {
   num = strsplit(file,split="_")[[1]][5]
   numlist <-c(numlist,num)
 }
+
+# preload PRISM data into RasterBrick
+
+#Search pattern for PRISM daily temperature grids. Load them for processing.
+pattern = paste("(PRISM_tmin_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
+tminfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE)
+r <- raster(tminfiles[1])
+tminstack <- stack(r)
+tminstack@layers <- sapply(tminfiles, function(x) { r@file@name=x; r } ) 
+
+pattern = paste("(PRISM_tmax_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
+tmaxfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE)
+r <- raster(tmaxfiles[1])
+tmaxstack <- stack(r)
+tmaxstack@layers <- sapply(tmaxfiles, function(x) { r@file@name=x; r } ) 
+
+
 #Order by date starting with first downloaded date. Up to user to download date range
 #in line with species' biofix. Assumes Jan 01  biofix
 #Sorting is necessary in most recent year with provisional data and different filename structure
@@ -101,18 +142,55 @@ REGION <- switch(region_param,
                  "NORTHWEST"    = extent(-125.1,-103.8,40.6,49.2),
                  "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612),
                  "TEST"         = extent(-124, -122.5, 44, 45))
-template <- crop(raster(files[1]),REGION)
-
-# allocated RasterBrick to store simulation results
-# two strategies: layer for each simulation end result
-# or layer for each day, accumulated over simulations
+template <- crop(raster(files[1]), REGION)
 template[!is.na(template)] <- 0
+
+# crop tmin/tmax stacks
+# slower to brick, then crop surprisingly
+# system.time({
+#   tminbrick <- brick(tminstack)
+#   tminbrick <- crop(tminbrick, REGION)
+# })
+
+
+tminstack <- crop(tminstack, REGION)
+tmaxstack <- crop(tmaxstack, REGION)
+
+# if all thresholds same across lifestages, save time by calculated DD now
+if (isTRUE(all.equal(eggLDT, larvaeLDT, pupaeLDT, adultLDT)) &
+    isTRUE(all.equal(eggUDT, larvaeUDT, pupaeUDT, adultUDT))){
+      
+      #adapted triangle DD function for RasterBrick
+      #TODO: include other DDcalc functions    
+  
+      LDT <- eggLDT
+      UDT <- eggUDT
+      # system.time({
+      GDD <- overlay(x = tmaxstack, y = tminstack, 
+                      fun = function(x, y){
+                        Tmp1=6*((x-LDT)*(x-LDT))/(x-y)
+                        Tmp2=6*((x-UDT)*(x-UDT))/(x-y)
+                        Cond(x < LDT,0,
+                             Cond(y >= UDT,UDT-LDT,
+                                  Cond((x < UDT) & (y <= LDT), Tmp1/12,
+                                       Cond((y <= LDT) & (x >= UDT), (Tmp1-Tmp2)/12,
+                                            Cond((y > LDT) & (x >= UDT), 6*(x+y-2*LDT)/12 - (Tmp2/12),
+                                                 Cond((y > LDT) & (x < UDT), 6*(x+y-2*LDT)/12,0))))))
+                      },
+                      filename = "dailygdd",
+                      recycle = FALSE,
+                     overwrite = TRUE)
+      # })
+      names(GDD) <- sortedlist
+      DT_same <- TRUE
+    }
+
 
 # new try: split raster into smaller chunks to run in parallel
 # each simulation just accumulates, so only one raster/lifestage saved at once per chunk
 
-# splits template into list of smaller map rasters
-SplitMap <- SplitRas(template, ppside = floor(sqrt(ncores)), TRUE, FALSE)
+# # splits template into list of smaller map rasters
+# SplitMap <- SplitRas(template, ppside = floor(sqrt(ncores)), TRUE, FALSE)
 
 # draw parameters outside of parallel loops so all maps use same for the sims
 
@@ -157,14 +235,16 @@ newname <- paste("run", gsub("-", "",
 dir.create(newname)
 
 system.time({
-foreach(map = 1:length(SplitMap), .packages= "raster") %dopar% {
-  print(map)
-  template <- SplitMap[[map]]
+# foreach(map = 1:length(SplitMap), .packages= "raster") %dopar% {
+#   print(map)
+#   template <- SplitMap[[map]]
+  foreach(sim = 1:nsim, .packages= "raster") %dopar% {
+  
   #Initialize all tracking rasters as zero with the template
   
   # loop over simulations
   
-  for (sim in 1:nsim){
+  # for (sim in 1:nsim){
     print(sim)
     eggDD <- params$eggDD[sim]
     larvaeDD <- params$larvaeDD[sim]
@@ -216,6 +296,8 @@ foreach(map = 1:length(SplitMap), .packages= "raster") %dopar% {
       index <- which(sublist == d)
       if (.Platform$OS.type == "windows") flush.console()
       Sys.sleep(1)
+      
+      if (isFALSE(DT_same)){
       #Read in that day's PRISM raster files
       # pattern = paste("(PRISM_tmean_)(.*)(",d,")(_bil.bil)$", sep="")
       # temp <- list.files(pattern=pattern,all.files=FALSE, full.names=TRUE)
@@ -230,11 +312,13 @@ foreach(map = 1:length(SplitMap), .packages= "raster") %dopar% {
       
       # tmean not in GRUB PRISM data, use approximation
       tmean <- (tmax + tmin) / 2
+      }
+      
       
       # photoperiod for this day across raster
       if (model_CDL == 1){
         doy <- lubridate::yday(lubridate::ymd(d))
-        photo <- RasterPhoto(tmin, doy)
+        photo <- RasterPhoto(template, doy)
       }
       
       #### Loop through Stages; order of stages now read from SPP param file ####
@@ -244,12 +328,17 @@ foreach(map = 1:length(SplitMap), .packages= "raster") %dopar% {
         
         ####  MAIN STEPS FOR EGG STAGE ####
         if (i == "E" | i == "OE") {   # Egg Stage
-          if(calctype=="average") { #devel DDs (zero values for temps below LDT)
-            dd0tmp <- AvgDD(tmax,tmin,eggLDT,eggUDT)
-          } else if(calctype=="triangle") {
-            dd0tmp <- TriDD(tmax,tmin,eggLDT,eggUDT)
-          } else { # assume (calctype=="simple") 
-            dd0tmp <- SimpDD(tmean,eggLDT)
+          if(isFALSE(DT_same)){
+            if(calctype=="average") { #devel DDs (zero values for temps below LDT)
+              dd0tmp <- AvgDD(tmax,tmin,eggLDT,eggUDT)
+            } else if(calctype=="triangle") {
+              dd0tmp <- TriDD(tmax,tmin,eggLDT,eggUDT)
+            } else { # assume (calctype=="simple") 
+              dd0tmp <- SimpDD(tmean,eggLDT)
+            }
+          }else if(isTRUE(DT_same)){
+            # extract layer from RasterBrick
+            dd0tmp <- GDD[[paste("X", d, sep = "")]]
           }
           
           if (i == "OE") { dd0 <- dd0tmp * LSOW0 
@@ -299,14 +388,19 @@ foreach(map = 1:length(SplitMap), .packages= "raster") %dopar% {
           ####  MAIN STEPS FOR LARVAL STAGE ####
         } else if (i == "L" | i == "OL") {  # Larval Stage
           #developmental degree days
-          if(calctype=="average") {
-            dd1tmp <- AvgDD(tmax,tmin,larvaeLDT,larvaeUDT)
-          } else if(calctype=="triangle") {
-            dd1tmp <- TriDD(tmax,tmin,larvaeLDT,larvaeUDT)
-          } else { # assume (calctype=="simple") 
-            dd1tmp <- SimpDD(tmean,larvaeLDT)
+          if(isFALSE(DT_same)){
+            if(calctype=="average") {
+              dd1tmp <- AvgDD(tmax,tmin,larvaeLDT,larvaeUDT)
+            } else if(calctype=="triangle") {
+              dd1tmp <- TriDD(tmax,tmin,larvaeLDT,larvaeUDT)
+            } else { # assume (calctype=="simple") 
+              dd1tmp <- SimpDD(tmean,larvaeLDT)
+            }
+            # ddtotal <- ddtotal + dd1tmp #LEN : Accumulate total degree days for the year for larvae
+          }else if(isTRUE(DT_same)){
+            # extract layer from RasterBrick
+            dd1tmp <- GDD[[paste("X", d, sep = "")]]
           }
-          ddtotal <- ddtotal + dd1tmp #LEN : Accumulate total degree days for the year for larvae
           
           #else { # just use lifestage mask
           if (i == "OL") { dd1 <- dd1tmp * LSOW1 }
@@ -348,13 +442,18 @@ foreach(map = 1:length(SplitMap), .packages= "raster") %dopar% {
           
           ####  MAIN STEPS FOR PUPAL STAGE ####
         } else if (i == "P" | i == "OP") {   # Pupal Stage
-          #developmental degree days
-          if(calctype=="average") {
-            dd2tmp <- AvgDD(tmax,tmin,pupaeLDT,pupaeUDT)
-          } else if(calctype=="triangle") {
-            dd2tmp <- TriDD(tmax,tmin,pupaeLDT,pupaeUDT)
-          } else { # assume (calctype=="simple") 
-            dd2tmp <- SimpDD(tmean,pupaeLDT)
+          if(isFALSE(DT_same)){
+            #developmental degree days
+            if(calctype=="average") {
+              dd2tmp <- AvgDD(tmax,tmin,pupaeLDT,pupaeUDT)
+            } else if(calctype=="triangle") {
+              dd2tmp <- TriDD(tmax,tmin,pupaeLDT,pupaeUDT)
+            } else { # assume (calctype=="simple") 
+              dd2tmp <- SimpDD(tmean,pupaeLDT)
+            }
+          }else if(isTRUE(DT_same)){
+            # extract layer from RasterBrick
+            dd2tmp <- GDD[[paste("X", d, sep = "")]]
           }
           
           if (i == "OP") { dd2 <- dd2tmp * LSOW2
@@ -396,13 +495,18 @@ foreach(map = 1:length(SplitMap), .packages= "raster") %dopar% {
           
           ####  MAIN STEPS FOR ADULT STAGE ####
         } else if (i == "A" | i == "OA") {  # Adult stage, or time to 50% oviposition
-          #developmental degree days
-          if(calctype=="average") {
-            dd3tmp <- AvgDD(tmax,tmin,adultLDT,adultUDT)
-          } else if(calctype=="triangle") {
-            dd3tmp <- TriDD(tmax,tmin,adultLDT,adultUDT)
-          } else { # assume (calctype==simple) 
-            dd3tmp <- SimpDD(tmean,adultLDT)
+          if(isFALSE(DT_same)){
+            #developmental degree days
+            if(calctype=="average") {
+              dd3tmp <- AvgDD(tmax,tmin,adultLDT,adultUDT)
+            } else if(calctype=="triangle") {
+              dd3tmp <- TriDD(tmax,tmin,adultLDT,adultUDT)
+            } else { # assume (calctype==simple) 
+              dd3tmp <- SimpDD(tmean,adultLDT)
+            }
+          }else if(isTRUE(DT_same)){
+            # extract layer from RasterBrick
+            dd3tmp <- GDD[[paste("X", d, sep = "")]]
           }
           
           #else { # just use lifestage mask
@@ -528,76 +632,146 @@ foreach(map = 1:length(SplitMap), .packages= "raster") %dopar% {
       }  # lifestage for loop
     }  # daily loop
     
-    if (sim == 1){
-      AggNumGen <- NumGenstack
-      AggLS0 <- LS0stack
-      AggLS1 <- LS1stack
-      AggLS2 <- LS2stack
-      AggLS3 <- LS3stack
-      AggLS4 <- LS4stack
-    }else{
-      AggNumGen <- overlay(AggNumGen, NumGenstack, fun=function(x,y) x + y)
-      AggLS0 <- overlay(AggLS0, LS0stack, fun=function(x,y) x + y)
-      AggLS1 <- overlay(AggLS1, LS1stack, fun=function(x,y) x + y)
-      AggLS2 <- overlay(AggLS2, LS2stack, fun=function(x,y) x + y)
-      AggLS3 <- overlay(AggLS3, LS3stack, fun=function(x,y) x + y)
-      AggLS4 <- overlay(AggLS4, LS4stack, fun=function(x,y) x + y)
-    }
+    # 
+    # # this accumulates simulation values in one stack, first attempt at 
+    # # variation in physiological params
+    # if (sim == 1){
+    #   AggNumGen <- NumGenstack
+    #   AggLS0 <- LS0stack
+    #   AggLS1 <- LS1stack
+    #   AggLS2 <- LS2stack
+    #   AggLS3 <- LS3stack
+    #   AggLS4 <- LS4stack
+    # }else{
+    #   AggNumGen <- overlay(AggNumGen, NumGenstack, fun=function(x,y) x + y)
+    #   AggLS0 <- overlay(AggLS0, LS0stack, fun=function(x,y) x + y)
+    #   AggLS1 <- overlay(AggLS1, LS1stack, fun=function(x,y) x + y)
+    #   AggLS2 <- overlay(AggLS2, LS2stack, fun=function(x,y) x + y)
+    #   AggLS3 <- overlay(AggLS3, LS3stack, fun=function(x,y) x + y)
+    #   AggLS4 <- overlay(AggLS4, LS4stack, fun=function(x,y) x + y)
+    # }
+    
+    #saving files by layer makes a lot of files!
+    
+    # # if parallel by map chunk
+    # #each band is a day, first index is map chunk index
+    # mapcode <- formatC(map, width = 3, format = "d", flag = "0")
+    # 
+    # NumGenFile <- writeRaster(NumGenstack, 
+    #                           filename = paste(newname, "/NumGen_", mapcode, "_sim", sim, sep = ""),
+    #                           overwrite = TRUE)
+    # LS0File <- writeRaster(LS0stack, filename = paste(newname, "/LS0_", mapcode, "_sim", sim, sep = ""),
+    #                        overwrite = TRUE)
+    # LS1File <- writeRaster(LS1stack, filename = paste(newname, "/LS1_", mapcode, "_sim", sim, sep = ""),
+    #                        overwrite = TRUE)
+    # LS2File <- writeRaster(LS2stack, filename = paste(newname, "/LS2_", mapcode, "_sim", sim, sep = ""),
+    #                        overwrite = TRUE)
+    # LS3File <- writeRaster(LS3stack, filename = paste(newname, "/LS3_", mapcode, "_sim", sim, sep = ""),
+    #                        overwrite = TRUE)
+    # LS4File <- writeRaster(LS4stack, filename = paste(newname, "/LS4_", mapcode, "_sim", sim, sep = ""),
+    #                        overwrite = TRUE)
+    
+    
+    NumGenFile <- writeRaster(NumGenstack, 
+                              filename = paste(newname, "/NumGen_", "sim", sim, sep = ""),
+                              overwrite = TRUE)
+    LS0File <- writeRaster(LS0stack, filename = paste(newname, "/LS0_", "sim", sim, sep = ""),
+                           overwrite = TRUE)
+    LS1File <- writeRaster(LS1stack, filename = paste(newname, "/LS1_", "sim", sim, sep = ""),
+                           overwrite = TRUE)
+    LS2File <- writeRaster(LS2stack, filename = paste(newname, "/LS2_", "sim", sim, sep = ""),
+                           overwrite = TRUE)
+    LS3File <- writeRaster(LS3stack, filename = paste(newname, "/LS3_", "sim", sim, sep = ""),
+                           overwrite = TRUE)
+    LS4File <- writeRaster(LS4stack, filename = paste(newname, "/LS4_", "sim", sim, sep = ""),
+                           overwrite = TRUE)
+    
     rm(NumGenstack, LS0stack, LS1stack, LS2stack, LS3stack, LS4stack)
     
-  } #sim loop
+  # } #sim loop
   
-  #saving files by layer makes a lot of files!
-  #each band is a day, first index is map chunk index
-  mapcode <- formatC(map, width = 3, format = "d", flag = "0")
-  
-  NumGenFile <- writeRaster(AggNumGen, filename = paste(newname, "/NumGen_", mapcode, sep = ""),
-                             overwrite = TRUE)
-  LS0File <- writeRaster(AggLS0, filename = paste(newname, "/LS0_", mapcode, sep = ""),
-                          overwrite = TRUE)
-  LS1File <- writeRaster(AggLS1, filename = paste(newname, "/LS1_", mapcode, sep = ""),
-                          overwrite = TRUE)
-  LS2File <- writeRaster(AggLS2, filename = paste(newname, "/LS2_", mapcode, sep = ""),
-                          overwrite = TRUE)
-  LS3File <- writeRaster(AggLS3, filename = paste(newname, "/LS3_", mapcode, sep = ""),
-                          overwrite = TRUE)
-  LS4File <- writeRaster(AggLS4, filename = paste(newname, "/LS4_", mapcode, sep = ""),
-                          overwrite = TRUE)
-  
-  
+  # #saving files by layer makes a lot of files!
+  # #each band is a day, first index is map chunk index
+  # mapcode <- formatC(map, width = 3, format = "d", flag = "0")
+  # 
+  # NumGenFile <- writeRaster(AggNumGen, filename = paste(newname, "/NumGen_", mapcode, sep = ""),
+  #                            overwrite = TRUE)
+  # LS0File <- writeRaster(AggLS0, filename = paste(newname, "/LS0_", mapcode, sep = ""),
+  #                         overwrite = TRUE)
+  # LS1File <- writeRaster(AggLS1, filename = paste(newname, "/LS1_", mapcode, sep = ""),
+  #                         overwrite = TRUE)
+  # LS2File <- writeRaster(AggLS2, filename = paste(newname, "/LS2_", mapcode, sep = ""),
+  #                         overwrite = TRUE)
+  # LS3File <- writeRaster(AggLS3, filename = paste(newname, "/LS3_", mapcode, sep = ""),
+  #                         overwrite = TRUE)
+  # LS4File <- writeRaster(AggLS4, filename = paste(newname, "/LS4_", mapcode, sep = ""),
+  #                         overwrite = TRUE)
+  # 
+  # 
 } #foreach map chunk loop
-
-# then have to retrieve files and mosaic back together
-returnwd <- getwd()
-setwd(newname)
-
-f <-list.files()
-rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
-
-ls <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1])
-maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,2])
-maps <- gsub(pattern = ".grd", replacement = "", x = maps)
-
-for (i in ls){
-  fs <- rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)]
-  bricklist <- list()
-  for (m in 1:length(fs)){
-    bricklist[[m]] <- brick(fs[m])
-  }
-  
-  bricklist$filename <- paste(i, "all", sep = "_")
-  bricklist$overwrite <- TRUE
-  test <- do.call(merge, bricklist)
-}
-
-
-cleanup <- list.files()
-cleanup <- cleanup[-grep("all", x = cleanup)]
-lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
-
-setwd(returnwd)
-
 })
+  
+  
+  
+# TODO: rewrite for no map chunking
+  # just skip below, files already saved appropriately
+#   
+# # then have to retrieve files and mosaic back together
+# returnwd <- getwd()
+# setwd(newname)
+# 
+# f <-list.files()
+# rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
+# 
+# # # for all sims summed together
+# # ls <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1])
+# # maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,2])
+# # maps <- gsub(pattern = ".grd", replacement = "", x = maps)
+# 
+# # for each sim with unique information to save
+# ls <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,1])
+# maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,2])
+# sims <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,3])
+# sims <- gsub(pattern = ".grd", replacement = "", x = sims)
+# 
+# # # for all sims summed together
+# # for (i in ls){
+# #   fs <- rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)]
+# #   bricklist <- list()
+# #   for (m in 1:length(fs)){
+# #     bricklist[[m]] <- brick(fs[m])
+# #   }
+# #   
+# #   bricklist$filename <- paste(i, "all", sep = "_")
+# #   bricklist$overwrite <- TRUE
+# #   test <- do.call(merge, bricklist)
+# # }
+# 
+# 
+# # for each sim with unique information to save
+# for (i in ls){
+#   fs <- rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)]
+#   for (j in sims){
+#     fs2 <- fs[grep(pattern = j, x = fs, fixed = TRUE)]
+#     
+#     bricklist <- list()
+#     for (m in 1:length(fs2)){
+#       bricklist[[m]] <- brick(fs2[m])
+#     }
+#     
+#     bricklist$filename <- paste(i, j, "all", sep = "_")
+#     bricklist$overwrite <- TRUE
+#     test <- do.call(merge, bricklist)
+#   }
+# }
+# 
+# cleanup <- list.files()
+# cleanup <- cleanup[-grep("all", x = cleanup)]
+# lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
+# 
+# setwd(returnwd)
+
+# })
 
 
 # 56 hours for 100 sims of CONUS with 16 cores
@@ -607,16 +781,17 @@ saveRDS(params, file = paste(newname, "/params.rds", sep = ""))
 
 # map of Number of Generations
 # decimals indicate some simulations reached next integer
-res <- brick(paste(newname, "/", "NumGen_all.grd", sep = ""))
-res <- res[[365]]/100
+res <- brick(paste(newname, "/", "NumGen_sim7.grd", sep = ""))
+# res <- res[[365]]/100
+plot(res[[seq(10, 360, 50)]])
 
 # map of diapause
-res <- brick(paste(newname, "/", "LS4_all.grd", sep = ""))
-plot(res[[seq(50, 350, 50)]])
+res <- brick(paste(newname, "/", "LS1_sim1_all.grd", sep = ""))
+plot(res[[seq(100, 250, 30)]])
 
 # map of lifestages
-res <- brick(paste(newname, "/", "LS0_all.grd", sep = ""))
-plot(res[[seq(10, 50, 5)]])
+res <- brick(paste(newname, "/", "LS4_sim1_all.grd", sep = ""))
+plot(res[[seq(10, 100, 10)]])
 
 
 #TODO pretty raster facets with common scale, use ggplot or rastervis
@@ -635,6 +810,60 @@ test <- ggplot(df, aes(x, y, fill = Voltinism)) +
 test
 ggsave(filename = "voltinism.png", plot = test, device = "png", 
        width = 6, height = 4)
+
+
+
+
+
+# TODO plotting substages considering their weights
+
+returnwd <- getwd()
+setwd(newname)
+
+f <-list.files()
+rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
+
+# for each sim with unique information to save
+ls <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1])
+# maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,2])
+# sims <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,3])
+# sims <- gsub(pattern = ".grd", replacement = "", x = sims)
+
+# this loop takes a lot of time
+for (i in ls){
+  fs <- sort(rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)])
+  blank <- brick(fs[1]) * 0
+  for (j in 1:length(fs)){
+    ras_weighted <- brick(fs[j]) * substages[j, 2] # weights for each substage size
+    blank <- overlay(blank, ras_weighted, fun=function(x,y) x + y)
+  }
+  outras <- writeRaster(blank, filename = paste(i, "weighted", sep = "_"),
+                         overwrite = TRUE)
+}
+
+
+
+f <-list.files()
+rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
+ras <- brick(rasfiles[47])
+plot(ras[[seq(10, 310, 50)]])
+plot(ras[[365]])
+
+setwd(returnwd)
+
+
+library(ggplot2)
+library(viridis)
+
+df = as.data.frame(ras[[80]], xy=TRUE)
+names(df)[3] <- "Prop"
+test <- ggplot(df, aes(x, y, fill = Prop)) +
+  geom_raster() +
+  scale_fill_viridis(na.value = "white") + 
+  theme_bw() +
+  ggtitle("Voltinism at end of year")
+test
+
 
 # loop to grab all lifestage results on a certain day to plot together
 # save in one giant data.frame to use for plots
