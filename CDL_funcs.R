@@ -150,3 +150,42 @@ gauss.hermite <- function (points, iterlim = 50) {
   r
 }
 
+
+
+CombineMaps <- function(rasfiles, tmpdir, newdir){
+  
+  rasfiles <- rasfiles[grep(pattern = ".grd", x = rasfiles, fixed = TRUE)]
+  
+  # for each sim with unique information to save
+  ls <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,1])
+  maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,2])
+  sims <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,3])
+  sims <- sort(gsub(pattern = ".grd", replacement = "", x = sims))
+  
+  reslist <- list()
+  # for each sim with unique information to save
+  for (i in ls){
+    fs <- rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)]
+    for (j in sims){
+      fs2 <- fs[grep(pattern = j, x = fs, fixed = TRUE)]
+      
+      bricklist <- list()
+      for (m in 1:length(fs2)){
+        bricklist[[m]] <- brick(fs2[m])
+      }
+      
+      bricklist$filename <- paste(newdir, 
+                                  paste(i, j, "all", sep = "_"), sep = "/")
+      bricklist$overwrite <- TRUE
+      test <- do.call(merge, bricklist)
+      reslist[[length(reslist) + 1]] <- bricklist$filename
+    }
+  }
+  return(reslist)
+  cleanup <- list.files(path = tmpdir)
+  cleanup <- cleanup[-grep("all", x = cleanup)]
+  lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
+  
+}
+
+
