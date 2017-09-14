@@ -1,3 +1,18 @@
+# discretization of distributions
+# simpler version
+
+meanx <- 100
+sdx <- 6
+plot(pnorm(x = seq(.01, .99, .01), mean = meanx, sd = sdx))
+
+SubstageVals <- function(numstage, perc){
+  low <- qnorm((1 - perc)/2)
+  high <- qnorm(1 - (1 - perc) / 2)
+  bounds <- seq(low, high, length.out = numstage + 1)
+  means <- (bounds[1:numstage] + bounds[2:(numstage + 1)]) / 2
+  weights <- diff(pnorm(bounds), lag = 1)
+  return(data.frame(means, weights))
+}
 
 
 
