@@ -1,5 +1,5 @@
 # Take Gerricke's FCM code and convert to Galerucella parameters
-# Test out photoperiod and substages with constrained extext (Oregon)
+# Test out photoperiod and substages with constrained extexts
 
 # SLOW, 
 # ways to speed up, reduce memory load
