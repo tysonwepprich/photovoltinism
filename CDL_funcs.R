@@ -45,6 +45,7 @@ photoperiod <- function(lat, doy, p = 1.5){
     (sin(p * pi / 180) + sin(lat * pi / 180) * sin(phi))/
       (cos(lat * pi / 180) * cos(phi))
   )
+  return(D)
 }
 
 

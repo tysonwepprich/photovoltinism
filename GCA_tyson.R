@@ -1,5 +1,5 @@
 # Take Gerricke's FCM code and convert to Galerucella parameters
-# Test out photoperiod and substages with constrained extext (Oregon)
+# Test out photoperiod and substages with constrained extexts
 
 # SLOW, 
 # ways to speed up, reduce memory load
@@ -47,14 +47,14 @@ library(doMC)    # parallel backend for foreach
 prism_path <- "/data/PRISM/2014"
 # prism_path <- "/data/PRISM/"
 
-# TODO loop with multiple years
-# OR take years and extract "average" GDD accumulation
-prism_path <- "/data/PRISM/"
-years <- c(2007:2013)
-for (yr in years){
-  path <- paste(prism_path, yr, sep = "/")
-  
-}
+# # TODO loop with multiple years
+# # OR take years and extract "average" GDD accumulation
+# prism_path <- "/data/PRISM/"
+# years <- c(2007:2013)
+# for (yr in years){
+#   path <- paste(prism_path, yr, sep = "/")
+#   
+# }
 
 
 source('CDL_funcs.R')
