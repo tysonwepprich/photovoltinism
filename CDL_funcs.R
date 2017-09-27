@@ -4,6 +4,19 @@ Cond=function(condition, trueValue, falseValue){
   return(condition * trueValue + (!condition)*falseValue)
 }
 
+#####
+# Simple way to assign weights for substages
+# Choose number of substages and the decimal (0, 1) of population to include
+# Outputs standard deviations from mean and weights for substage
+SubstageVals <- function(numstage, perc){
+  low <- qnorm((1 - perc)/2)
+  high <- qnorm(1 - (1 - perc) / 2)
+  bounds <- seq(low, high, length.out = numstage + 1)
+  means <- (bounds[1:numstage] + bounds[2:(numstage + 1)]) / 2
+  weights <- diff(pnorm(bounds), lag = 1)
+  return(data.frame(means, weights))
+}
+
 #### DD Calculation Methods: Tmean (no upper threshold, Tmax+Tmin AVG w/horiz upper threshold, 
 #   and Single Triangle w/horiz. upper threshold
 
@@ -45,7 +58,6 @@ photoperiod <- function(lat, doy, p = 1.5){
     (sin(p * pi / 180) + sin(lat * pi / 180) * sin(phi))/
       (cos(lat * pi / 180) * cos(phi))
   )
-  return(D)
 }
 
 

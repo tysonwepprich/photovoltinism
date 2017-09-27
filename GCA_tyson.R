@@ -72,6 +72,7 @@ stgorder   <- c("OA","E","L","P","A","F")
 photo_sens <- 3 #c(-1, 3) # integer life stages for now
 CDL_mu        <- 14.25
 model_CDL  <- 1 # if 1, model photoperiod decision
+CDL_log    <- 1 # if 1, model CDL from logistic regression results
 owstage    <- "OA"
 OWadultDD_mu  <- 100 #108 # text OW stage dev 39 DD "post diapause"
 calctype   <-"triangle"
