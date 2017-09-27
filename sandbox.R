@@ -14,6 +14,8 @@ SubstageVals <- function(numstage, perc){
   return(data.frame(means, weights))
 }
 
+# this gives approximately even 1 standard deviation differences
+round(SubstageVals(7, .999535), 3)
 
 
 # make rasters go faster
