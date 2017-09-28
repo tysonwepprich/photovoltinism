@@ -1,0 +1,225 @@
+---
+title: "Galerucella Phenology"
+author: "Tyson Wepprich"
+date: "September 27, 2017"
+output: html_document
+---
+I analyze field observations from different sites and years (and methods) in Oregon
+in order to estimate distributions of overwintering adult emergence and 
+oviposition. These distributions can then be used to include variation in 
+phenology between substages (or cohorts).
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(lubridate)
+library(ggplot2)
+library(dplyr)
+library(mgcv)
+```
+
+I extracted data from "Galerucella phenology 7-30-13.csv" for 4 sites.
+Cumulative degree-days (10/37.8C) are from nearby weather stations using uspest.org.
+
+
+```{r data}
+dat <- read.csv("GCA_pheno_2013.csv", header = TRUE)
+dat$Date <- mdy(dat$Date)
+dat <- dat %>% 
+  group_by(Site, Stage) %>% 
+  mutate(RelProp = MeanCount / max(MeanCount, na.rm = TRUE),
+         CDF = cumsum(MeanCount) / sum(MeanCount, na.rm = TRUE),
+         Count = ifelse(Stage == "adult",   ### this only works for Fritzi's data
+                        round(MeanCount * 15), round(MeanCount * 150)))
+```
+
+Plots of raw data suggest that we have the full shape of the adult emergence
+distribution, but might want to truncate the long right tail.
+Egg distributions could be estimated by combining datasets, since two studies 
+cover different times.
+
+Cumulative distribution functions show variation between sites. 
+
+```{r raw data plots, warning=FALSE, message = FALSE, echo = FALSE}
+
+plt <- ggplot(dat, aes(x = GDD, y = CDF, group = Stage, color = Stage)) + 
+  geom_point() +
+  geom_line() +
+  facet_grid(Site~Stage) +
+  theme_bw() + 
+  ggtitle("Cumulative distribution function of observations")
+plt
+```
+
+Smoothing with a loess function approximates average phenology, but does not
+take into account distribution for count data (and allows estimates below 0).
+
+```{r naive smooth, warning=FALSE, message = FALSE, echo = FALSE}
+
+plt <- ggplot(dat, aes(x = GDD, y = RelProp, group = Stage, color = Site)) + 
+  geom_point() +
+  geom_smooth() +
+  facet_wrap(~Stage, ncol = 1) +
+  theme_bw() +
+  ggtitle("Smoothed raw data with loess")
+plt
+```
+
+Smoothing with a GAM might be better. Here it is for adults, accounting for site
+population sizes. Data were modeled as counts with a Poisson distributions, but
+plotted with each count scaled by the site's maximum count.
+
+```{r gam smooth adult, echo = FALSE}
+stagedat <- dat %>% filter(Stage == "adult")
+
+mod <- gam(Count ~ s(GDD, k = 10) + s(Site, bs = "re"), method = "REML",
+           family = poisson, data = stagedat)
+
+xrange <- range(stagedat$GDD)
+xseq <- seq(from=xrange[1], to=xrange[2], length=1000)
+preddat <- data.frame(GDD = xseq, Site = "Sutherlin")
+preddat$y <- predict(mod, newdata = preddat, exclude = "s(Site)", type = "response")
+preddat$RelProp <- preddat$y / max(preddat$y, na.rm = TRUE)
+adultpred <- preddat #for later chunk
+
+plt <- ggplot(stagedat, aes(x = GDD, y = RelProp, color = Site)) + 
+  geom_point() +
+  geom_path(data = preddat) +
+  # facet_wrap(~Stage, ncol = 1) +
+  theme_bw()
+plt
+
+```
+
+When the same model is used for eggs, we see one problems with a GAM smooth. 
+The smoothing needs to be adjusted to avoid overfitting, here shown with the 
+default 10 knots.
+
+```{r gam smooth eggs, echo = FALSE, warning=FALSE, message = FALSE}
+stagedat <- dat %>% filter(Stage == "egg")
+
+mod <- gam(Count ~ s(GDD, k = 10) + s(Site, bs = "re"), method = "REML",
+           family = poisson, data = stagedat)
+
+xrange <- range(stagedat$GDD)
+xseq <- seq(from=xrange[1], to=xrange[2], length=1000)
+preddat <- data.frame(GDD = xseq, Site = "Sutherlin")
+preddat$y <- predict(mod, newdata = preddat, exclude = "s(Site)", type = "response")
+preddat$RelProp <- preddat$y / max(preddat$y, na.rm = TRUE)
+
+plt <- ggplot(stagedat, aes(x = GDD, y = RelProp, color = Site)) + 
+  geom_point() +
+  geom_path(data = preddat) +
+  # facet_wrap(~Stage, ncol = 1) +
+  theme_bw()
+plt
+```
+
+Even with a less flexible model (knots = 5), Garono's counts stay high all the way to the 
+emergence of F1 adults, which we might want to change. At least we can see 
+where the peak is for the egg distribution when combining both datasets.
+
+```{r gam smooth eggs 2, echo = FALSE, warning=FALSE, message = FALSE}
+stagedat <- dat %>% filter(Stage == "egg")
+
+mod <- gam(Count ~ s(GDD, k = 5) + s(Site, bs = "re"), method = "REML",
+           family = poisson, data = stagedat)
+
+xrange <- range(stagedat$GDD)
+xseq <- seq(from=xrange[1], to=xrange[2], length=1000)
+preddat <- data.frame(GDD = xseq, Site = "Sutherlin")
+preddat$y <- predict(mod, newdata = preddat, exclude = "s(Site)", type = "response")
+preddat$RelProp <- preddat$y / max(preddat$y, na.rm = TRUE)
+
+plt <- ggplot(stagedat, aes(x = GDD, y = RelProp, color = Site)) + 
+  geom_point() +
+  geom_path(data = preddat) +
+  # facet_wrap(~Stage, ncol = 1) +
+  theme_bw()
+plt
+```
+
+From the GAM predictions, I make a CDF which will be split up to derive substage
+parameters: mean GDD for emergence and the weight (% of total population).
+Choose the number of substages and range of distribution to cover between 0 and 1.
+
+```{r substage split}
+# distribution needs x and cdf
+gamdist <- adultpred %>% 
+  mutate(CDF = cumsum(y) / sum(y, na.rm = TRUE),
+         x = GDD)
+
+SubstageDistrib <- function(dist, numstage, perc){
+  # this is an approximation from GAM predictions, could make more precise
+  # with more predicted values or interpolation, but doesn't seem necessary
+  ReturnClosestValue <- function(dist, xval){
+    out <- dist$CDF[which(dist$x > xval)[1]]
+  }
+  
+  low <- (1 - perc)/2
+  high <- 1 - (1 - perc) / 2
+  low <- dist$x[which(dist$CDF > low)[1]]
+  high <- dist$x[which(dist$CDF > high)[1]]
+  
+  bounds <- seq(low, high, length.out = numstage + 1)
+  means <- (bounds[1:numstage] + bounds[2:(numstage + 1)]) / 2
+  weights <- diff(sapply(X = bounds, FUN = ReturnClosestValue, dist = dist), lag = 1)
+  return(data.frame(means, weights))
+}
+
+```
+
+Here are results with adult emergence with different numbers of substages and 
+percentages of distribution included. Each dot is a substage's parameters: 
+mean GDD at emergence and size of the substage population.
+
+```{r substage plots, echo = FALSE, warning=FALSE, message = FALSE}
+newdat <- expand.grid(NumStage = c(5, 7, 9),
+                      PercIncl = c(.9, .95, .99))
+test <- newdat %>% 
+  group_by(NumStage, PercIncl) %>% 
+  do(SubstageDistrib(dist = gamdist, numstage = .$NumStage, perc = .$PercIncl))
+
+plt <- ggplot(test, aes(x = means, y = weights)) +
+  geom_point() +
+  facet_grid(NumStage ~ PercIncl) +
+  theme_bw()
+plt
+```
+
+For one of these options (7 substages, 99% inclusion), here is how it compares
+to the continuous distribution.
+
+```{r substage plot final, echo = FALSE, warning=FALSE, message = FALSE}
+stagedat <- dat %>% filter(Stage == "adult")
+
+mod <- gam(Count ~ s(GDD, k = 10) + s(Site, bs = "re"), method = "REML",
+           family = poisson, data = stagedat)
+
+xrange <- range(stagedat$GDD)
+xseq <- seq(from=xrange[1], to=xrange[2], length=1000)
+preddat <- data.frame(GDD = xseq, Site = "Sutherlin")
+preddat$y <- predict(mod, newdata = preddat, exclude = "s(Site)", type = "response")
+preddat$RelProp <- preddat$y / max(preddat$y, na.rm = TRUE)
+adultpred <- preddat #for later chunk
+
+plt <- ggplot(stagedat, aes(x = GDD, y = RelProp, color = Site)) + 
+  # geom_point() +
+  geom_path(data = preddat, size = 2) +
+  theme(legend.position = "none") +
+  # facet_wrap(~Stage, ncol = 1) +
+  theme_bw()
+
+substages <- test %>% 
+  filter(NumStage == 7, PercIncl == .99) %>% 
+  mutate(RelProp = weights / max(weights),
+         Site = "Sutherlin",
+         GDD = means)
+
+plt + geom_col(data = substages, color = "black", alpha = 0) +
+  theme_bw() +
+  theme(legend.position = "none")
+
+```
+
+
+
