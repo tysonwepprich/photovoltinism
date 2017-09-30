@@ -2,12 +2,15 @@
 title: "Galerucella Phenology"
 author: "Tyson Wepprich"
 date: "September 27, 2017"
-output: html_document
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: false
+    toc_depth: 2
 ---
-I analyze field observations from different sites and years (and methods) in Oregon
-in order to estimate distributions of overwintering adult emergence and 
-oviposition. These distributions can then be used to include variation in 
-phenology between substages (or cohorts).
+##Summary
+I analyze field observations from different sites and years (and methods) in Oregon in order to estimate distributions of overwintering adult emergence and oviposition. These distributions can then be used to include variation in phenology between substages (or cohorts) in voltinism models.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -15,11 +18,14 @@ library(lubridate)
 library(ggplot2)
 library(dplyr)
 library(mgcv)
+library(grid)
+library(fitdistrplus)
+
+theme_set(theme_bw(base_size = 14)) 
 ```
 
-I extracted data from "Galerucella phenology 7-30-13.csv" for 4 sites.
-Cumulative degree-days (10/37.8C) are from nearby weather stations using uspest.org.
-
+##Field observations
+I extracted data from "Galerucella phenology 7-30-13.csv" for 4 sites in 2009 and 2013. Cumulative degree-days (10C/37.8C) are from nearby weather stations using uspest.org.
 
 ```{r data}
 dat <- read.csv("GCA_pheno_2013.csv", header = TRUE)
@@ -32,43 +38,38 @@ dat <- dat %>%
                         round(MeanCount * 15), round(MeanCount * 150)))
 ```
 
-Plots of raw data suggest that we have the full shape of the adult emergence
-distribution, but might want to truncate the long right tail.
-Egg distributions could be estimated by combining datasets, since two studies 
-cover different times.
+Plots of raw data suggest that we have the full shape of the adult emergence distribution, but might want to truncate the long right tail. Egg distributions could be estimated by combining datasets, since two studies cover different times. Below, cumulative distribution functions show the variation between sites. 
 
-Cumulative distribution functions show variation between sites. 
-
-```{r raw data plots, warning=FALSE, message = FALSE, echo = FALSE}
+```{r raw data plots, warning=FALSE, message = FALSE}
 
 plt <- ggplot(dat, aes(x = GDD, y = CDF, group = Stage, color = Stage)) + 
   geom_point() +
   geom_line() +
-  facet_grid(Site~Stage) +
-  theme_bw() + 
-  ggtitle("Cumulative distribution function of observations")
+  facet_grid(Site~Stage) #+
+  # theme_bw() #+ 
+  # ggtitle("Cumulative distribution function of observations")
 plt
 ```
 
-Smoothing with a loess function approximates average phenology, but does not
-take into account distribution for count data (and allows estimates below 0).
+##Combining sites
+Smoothing with a loess function approximates average phenology, but does not take into account distribution for count data (and allows estimates below 0).
 
-```{r naive smooth, warning=FALSE, message = FALSE, echo = FALSE}
+In all plots below, I scale observations at different sites for easier comparisons. All counts are scaled by the site's maximum count to give values between 0 and 1.
+
+```{r naive smooth, warning=FALSE, message = FALSE}
 
 plt <- ggplot(dat, aes(x = GDD, y = RelProp, group = Stage, color = Site)) + 
   geom_point() +
   geom_smooth() +
-  facet_wrap(~Stage, ncol = 1) +
-  theme_bw() +
-  ggtitle("Smoothed raw data with loess")
+  facet_wrap(~Stage, ncol = 1) #+
+  # theme_bw() #+
+  # ggtitle("Smoothed raw data with loess")
 plt
 ```
 
-Smoothing with a GAM might be better. Here it is for adults, accounting for site
-population sizes. Data were modeled as counts with a Poisson distributions, but
-plotted with each count scaled by the site's maximum count.
+Smoothing with a GAM might be better. Here it is for adults, accounting for site population sizes. Data were modeled as counts with a Poisson distributions, but plotted with each count scaled by the site's maximum count.
 
-```{r gam smooth adult, echo = FALSE}
+```{r gam smooth adult}
 stagedat <- dat %>% filter(Stage == "adult")
 
 mod <- gam(Count ~ s(GDD, k = 10) + s(Site, bs = "re"), method = "REML",
@@ -81,20 +82,19 @@ preddat$y <- predict(mod, newdata = preddat, exclude = "s(Site)", type = "respon
 preddat$RelProp <- preddat$y / max(preddat$y, na.rm = TRUE)
 adultpred <- preddat #for later chunk
 
-plt <- ggplot(stagedat, aes(x = GDD, y = RelProp, color = Site)) + 
+plt_adult <- ggplot(stagedat, aes(x = GDD, y = RelProp, color = Site)) + 
   geom_point() +
   geom_path(data = preddat) +
+  ggtitle("Overwintering adults")
   # facet_wrap(~Stage, ncol = 1) +
-  theme_bw()
-plt
+  # theme_bw()
+plt_adult
 
 ```
 
-When the same model is used for eggs, we see one problems with a GAM smooth. 
-The smoothing needs to be adjusted to avoid overfitting, here shown with the 
-default 10 knots.
+When the same model is used for eggs, we see one problems with a GAM smooth. The smoothing needs to be adjusted to avoid overfitting, here shown with the default 10 knots.
 
-```{r gam smooth eggs, echo = FALSE, warning=FALSE, message = FALSE}
+```{r gam smooth eggs, warning=FALSE, message = FALSE}
 stagedat <- dat %>% filter(Stage == "egg")
 
 mod <- gam(Count ~ s(GDD, k = 10) + s(Site, bs = "re"), method = "REML",
@@ -109,16 +109,15 @@ preddat$RelProp <- preddat$y / max(preddat$y, na.rm = TRUE)
 plt <- ggplot(stagedat, aes(x = GDD, y = RelProp, color = Site)) + 
   geom_point() +
   geom_path(data = preddat) +
+  ggtitle("F1 Eggs")
   # facet_wrap(~Stage, ncol = 1) +
-  theme_bw()
+  # theme_bw()
 plt
 ```
 
-Even with a less flexible model (knots = 5), Garono's counts stay high all the way to the 
-emergence of F1 adults, which we might want to change. At least we can see 
-where the peak is for the egg distribution when combining both datasets.
+Even with a less flexible model (knots = 5), Garono's counts stay high all the way to the emergence of F1 adults, which we might want to change. At least we can see where the peak is for the egg distribution when combining both datasets.
 
-```{r gam smooth eggs 2, echo = FALSE, warning=FALSE, message = FALSE}
+```{r gam smooth eggs 2, warning=FALSE, message = FALSE}
 stagedat <- dat %>% filter(Stage == "egg")
 
 mod <- gam(Count ~ s(GDD, k = 5) + s(Site, bs = "re"), method = "REML",
@@ -129,18 +128,19 @@ xseq <- seq(from=xrange[1], to=xrange[2], length=1000)
 preddat <- data.frame(GDD = xseq, Site = "Sutherlin")
 preddat$y <- predict(mod, newdata = preddat, exclude = "s(Site)", type = "response")
 preddat$RelProp <- preddat$y / max(preddat$y, na.rm = TRUE)
+eggpred <- preddat # for later analysis
 
-plt <- ggplot(stagedat, aes(x = GDD, y = RelProp, color = Site)) + 
+plt_egg <- ggplot(stagedat, aes(x = GDD, y = RelProp, color = Site)) + 
   geom_point() +
-  geom_path(data = preddat) +
+  geom_path(data = preddat) +   
+  ggtitle("F1 Eggs")
   # facet_wrap(~Stage, ncol = 1) +
-  theme_bw()
-plt
+  # theme_bw()
+plt_egg
 ```
 
-From the GAM predictions, I make a CDF which will be split up to derive substage
-parameters: mean GDD for emergence and the weight (% of total population).
-Choose the number of substages and range of distribution to cover between 0 and 1.
+##Substage parameters
+From the GAM predictions, I make a CDF which will be split up to derive substage parameters: mean GDD for emergence and the weight (% of total population). This functions can take any shape of model predictions for the distribution and splits it into any number of substages using a defined proportion of the whole distribution to cut off extreme values (must be between 0 and 1).
 
 ```{r substage split}
 # distribution needs x and cdf
@@ -168,31 +168,115 @@ SubstageDistrib <- function(dist, numstage, perc){
 
 ```
 
-Here are results with adult emergence with different numbers of substages and 
-percentages of distribution included. Each dot is a substage's parameters: 
-mean GDD at emergence and size of the substage population.
+Here are results with adult emergence with different numbers of substages and percentages of the whole distribution included. Bars represent substages and the red line shows the predicted distribution from the GAM.
 
-```{r substage plots, echo = FALSE, warning=FALSE, message = FALSE}
+```{r substage plots, warning=FALSE, message = FALSE}
 newdat <- expand.grid(NumStage = c(5, 7, 9),
                       PercIncl = c(.9, .95, .99))
 test <- newdat %>% 
   group_by(NumStage, PercIncl) %>% 
-  do(SubstageDistrib(dist = gamdist, numstage = .$NumStage, perc = .$PercIncl))
+  do(SubstageDistrib(dist = gamdist, numstage = .$NumStage, perc = .$PercIncl)) %>% 
+  mutate(GDD = means, 
+         RelProp = weights / max(weights),
+         BarWidth = diff(means[1:2]))
 
-plt <- ggplot(test, aes(x = means, y = weights)) +
-  geom_point() +
+plt <- ggplot(data = test, aes(x = GDD, y = RelProp)) +
+  geom_col(aes(width = BarWidth), color = "black", alpha = 0) +
+  geom_path(data = adultpred, color = "red", alpha = .5, size = 1.5) +
   facet_grid(NumStage ~ PercIncl) +
-  theme_bw()
+  ggtitle("Overwintering adults")
 plt
 ```
 
-For one of these options (7 substages, 99% inclusion), here is how it compares
-to the continuous distribution.
+##Comparison with current model parameters
+DDRP model is limited to phenology from McAvoy & Kok 2007, which only has 1-3 observations per year for adults and 1-5 observations for eggs per year from 1993-95 from one site in Coeburn, VA.
 
-```{r substage plot final, echo = FALSE, warning=FALSE, message = FALSE}
-stagedat <- dat %>% filter(Stage == "adult")
+Here I plot the adult and egg distributions from Oregon data compared to the DDRP estimates for start and peak of oviposition based on McAvoy & Kok (red triangles). I added an estimate of end of oviposition as peak + 1/2 oviposition period length, which is same way DDRP estimates the start of oviposition.
 
-mod <- gam(Count ~ s(GDD, k = 10) + s(Site, bs = "re"), method = "REML",
+```{r multiplot func, include=FALSE}
+
+# Multiple plot function
+#
+# ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
+# - cols:   Number of columns in layout
+# - layout: A matrix specifying the layout. If present, 'cols' is ignored.
+#
+# If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
+# then plot 1 will go in the upper left, 2 will go in the upper right, and
+# 3 will go all the way across the bottom.
+#
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+  
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+  
+  numPlots = length(plots)
+  
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                     ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+  
+  if (numPlots==1) {
+    print(plots[[1]])
+    
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+    
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+      
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+```
+
+
+```{r compare old parameters, warning=FALSE, message = FALSE, fig.height = 8, fig.width = 6}
+plt_ad <- plt_adult +
+  geom_point(aes(x = 256.2, y = 1, color = "Coeburn"), shape = 17, size = 3) +
+  geom_point(aes(x = 108, y = 0, color = "Coeburn"), shape = 17, size = 3) +
+  geom_point(aes(x = 404.4, y = 0, color = "Coeburn"), shape = 17, size = 3) +
+  scale_x_continuous(limit = c(0, 600)) +
+  # theme(legend.position = "none") +
+  ggtitle("Overwintering adults")
+
+plt_eg <- plt_egg +
+  geom_point(aes(x = 256.2, y = 1, color = "Coeburn"), shape = 17, size = 3) +
+  geom_point(aes(x = 108, y = 0, color = "Coeburn"), shape = 17, size = 3) +  
+  geom_point(aes(x = 404.4, y = 0, color = "Coeburn"), shape = 17, size = 3) +
+  scale_x_continuous(limit = c(0, 600)) +
+  # theme(legend.position = "none") +
+  ggtitle("F1 Eggs")
+
+multiplot(plt_ad, plt_eg, cols = 1)
+```
+
+##Conclusion
+The DDRP estimates, based on observations from mid-1990s in Virginia, match well with egg observations from 2010s in Oregon. The adult peak and egg peak do not match well. Even with a pre-oviposition period, I think that egg observations give an estimation of oviposition that is biased late. This could be due to sampling being days after oviposition, early eggs hatching, or counting eggs after they have hatched. 
+
+For the substage model, what matters is the timing of oviposition. I plan to truncate the late season Garono egg observations so that the distribution tapers to zero. The taper will be informed by the end of the adult distribution, after which oviposition cannot occur. The beginning of the oviposition curve probably lays somewhere between the adult and egg distributions, due to the pre-oviposition period and egg counts being a biased proxy for oviposition. I am not sure how I'll combine these distributions yet.
+
+##Postscript
+Following suggestions to compare with oviposition data from Blossey, use slope of egg counts to represent oviposition rate, and fit with distribution for easier modeling.
+
+First, let's fit oviposition rate to a distribution.
+
+```{r oviposition distribution}
+stagedat <- dat %>% filter(Stage == "egg")
+
+mod <- gam(Count ~ s(GDD, k = 5) + s(Site, bs = "re"), method = "REML",
            family = poisson, data = stagedat)
 
 xrange <- range(stagedat$GDD)
@@ -200,26 +284,66 @@ xseq <- seq(from=xrange[1], to=xrange[2], length=1000)
 preddat <- data.frame(GDD = xseq, Site = "Sutherlin")
 preddat$y <- predict(mod, newdata = preddat, exclude = "s(Site)", type = "response")
 preddat$RelProp <- preddat$y / max(preddat$y, na.rm = TRUE)
-adultpred <- preddat #for later chunk
+eggpred <- preddat # for later analysis
 
-plt <- ggplot(stagedat, aes(x = GDD, y = RelProp, color = Site)) + 
-  # geom_point() +
-  geom_path(data = preddat, size = 2) +
-  theme(legend.position = "none") +
-  # facet_wrap(~Stage, ncol = 1) +
-  theme_bw()
+ovi_rate <- diff(eggpred$RelProp, lag = 1)
+# cut off distribution when oviposition rate hits 0
+ovi_rate <- ovi_rate[1:(which(ovi_rate < 0)[1] - 1)]
+plot(eggpred$GDD[1:length(ovi_rate)], ovi_rate * 1000)
 
-substages <- test %>% 
-  filter(NumStage == 7, PercIncl == .99) %>% 
-  mutate(RelProp = weights / max(weights),
-         Site = "Sutherlin",
-         GDD = means)
 
-plt + geom_col(data = substages, color = "black", alpha = 0) +
-  theme_bw() +
-  theme(legend.position = "none")
 
+gamdist <- eggpred %>% 
+  mutate(CDF = cumsum(y) / sum(y, na.rm = TRUE),
+         x = GDD)
+
+test <- SubstageDistrib(dist = gamdist, numstage = 7, perc = .99)
 ```
 
+A beta distribution fits best
 
+```{r try fitting package}
+# need to take curve above and draw out discrete observations
+draws <- rpois(n = length(ovi_rate), lambda = ovi_rate * 1000)
+gdd_obs <- rep(eggpred$GDD[1:length(ovi_rate)], times = draws)
+# hist(gdd_obs)
+
+descdist(gdd_obs, discrete = FALSE)
+fit.beta <- fitdist(gdd_obs/(max(gdd_obs) + 1), "beta")
+fit.norm <- fitdist(gdd_obs/(max(gdd_obs) + 1), "norm")
+fit.gamm <- fitdist(gdd_obs, "gamma")
+
+# descdist(gdd_obs, discrete = TRUE)
+# fit.norm <- fitdist(gdd_obs, "norm")
+# fit.pois <- fitdist(gdd_obs, "pois")
+# fit.nbin <- fitdist(gdd_obs, "nbinom")
+```
+
+Update the above graph with the selected beta distribution for oviposition.
+
+```{r updated graph}
+eggdist <- dbeta(x = seq(0,1, length.out = length(gdd_obs)), shape1 = fit.beta$estimate[1], shape2 = fit.beta$estimate[2])
+eggdist <- (eggdist / max(eggdist))
+egg.df <- data.frame(GDD = gdd_obs, RelProp = eggdist, Site = "Beta")
+
+plt_ad <- plt_adult +
+  geom_point(aes(x = 256.2, y = 1, color = "Coeburn"), shape = 17, size = 3) +
+  geom_point(aes(x = 108, y = 0, color = "Coeburn"), shape = 17, size = 3) +
+  geom_point(aes(x = 404.4, y = 0, color = "Coeburn"), shape = 17, size = 3) +
+  scale_x_continuous(limit = c(0, 600)) +
+  geom_path(data = egg.df, aes(x = GDD, y = RelProp)) +
+  # theme(legend.position = "none") +
+  ggtitle("Overwintering adults")
+
+plt_eg <- plt_egg +
+  geom_point(aes(x = 256.2, y = 1, color = "Coeburn"), shape = 17, size = 3) +
+  geom_point(aes(x = 108, y = 0, color = "Coeburn"), shape = 17, size = 3) +  
+  geom_point(aes(x = 404.4, y = 0, color = "Coeburn"), shape = 17, size = 3) +
+  scale_x_continuous(limit = c(0, 600)) +
+  geom_path(data = egg.df, aes(x = GDD, y = RelProp)) +
+  # theme(legend.position = "none") +
+  ggtitle("F1 Eggs")
+
+multiplot(plt_ad, plt_eg, cols = 1)
+```
 

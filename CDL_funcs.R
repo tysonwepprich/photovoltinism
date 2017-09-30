@@ -64,14 +64,34 @@ photoperiod <- function(lat, doy, p = 1.5){
 
 # calculate photoperiod values for raster
 # day of year from 'd', index of daily PRISM data used for DD accumulation
-RasterPhoto <- function(rast, doy){
+RasterPhoto <- function(rast, doy, perc_twilight){
   xy <- coordinates(rast)
-  hours <- photoperiod(xy[, 2], doy)
+  p <- perc_twilight * 6 / 100
+  hours <- photoperiod(xy[, 2], doy, p)
   outrast <- setValues(rast, hours)
   rast[!is.na(rast)] <- 0
   outrast <- rast + outrast
 }
 
+
+
+SubstageDistrib <- function(dist, numstage, perc){
+  # this is an approximation from GAM predictions, could make more precise
+  # with more predicted values or interpolation, but doesn't seem necessary
+  ReturnClosestValue <- function(dist, xval){
+    out <- dist$CDF[which(dist$x > xval)[1]]
+  }
+  
+  low <- (1 - perc)/2
+  high <- 1 - (1 - perc) / 2
+  low <- dist$x[which(dist$CDF > low)[1]]
+  high <- dist$x[which(dist$CDF > high)[1]]
+  
+  bounds <- seq(low, high, length.out = numstage + 1)
+  means <- (bounds[1:numstage] + bounds[2:(numstage + 1)]) / 2
+  weights <- diff(sapply(X = bounds, FUN = ReturnClosestValue, dist = dist), lag = 1)
+  return(data.frame(means, weights))
+}
 
 
 # from https://stackoverflow.com/questions/29784829/r-raster-package-split-image-into-multiples

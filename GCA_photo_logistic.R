@@ -45,10 +45,18 @@ points(d1$x~d1$Group.2, ylab="Proportion reproductive",xlab="Photoperiod (hrs)",
 
 
 
+# predicting diapause based on raster of photoperiods
 
+source('CDL_funcs.R')
+library(raster)
+doy <- 170
+GDD <- brick("meanGDD_2007to2013/meanGDD_07_13.grd")
+template <- crop(GDD[[1]], extent(-124, -122.5, 44, 45))
+template[!is.na(template)] <- 0
+photo <- RasterPhoto(template, doy, 100)
 
-
-
+prop_diap <- 1 - exp(coefs[1]+coefs[2]*photo)/(1+exp(coefs[1]+coefs[2]*photo))
+plot(prop_diap)
 
 #Palermo
 output=glm(diapause~Treatment, subset=Site=='Palermo',data=data,family=binomial)

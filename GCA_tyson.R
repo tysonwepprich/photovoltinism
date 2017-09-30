@@ -101,18 +101,23 @@ REGION <- switch(region_param,
 # introducing individual variation, tracked with simulations
 nday <- length(start_doy:end_doy)
 nsim <- 7 # for now, use square number
+
 DD_sd <- 10
 CDL_sd <- .1
 vary_indiv <- 1 # turn on indiv. variation
-# Gaussian quadrature to assign number/weights for substages
-substages <- gauss.hermite(11, iterlim = 50)[3:9, ] # remove ends with near zero weights
 
-# # Logistic regression photoperiod
-# b0 <- -45
-# b1 <- 3
-# x <- seq(8, 20, .1)
-# y <- 1 / (1 + exp(-(b0 + b1 * x)))
-# plot(x, y)
+# # Gaussian quadrature to assign number/weights for substages
+# substages <- gauss.hermite(11, iterlim = 50)[3:9, ] # remove ends with near zero weights
+
+# Take empirical distribution and calculate substages
+substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
+
+
+# Logistic regression photoperiod
+# from Fritzi's lab data, two different populations
+coefs <- c(-56.9745, 3.5101) # Northern
+# coefs <- c(-60.3523, 3.8888) # Southern
+
 
 # try to run sims in parallel and also split map if large REGION
 if (region_param == "CONUS"){
@@ -254,19 +259,22 @@ if (vary_indiv == 1){
   larvaeDD = larvaeDD_mu
   pupDD = pupDD_mu
   adultDD = adultDD_mu
-  OWadultDD = substages[, 1] * DD_sd + OWadultDD_mu
+  OWadultDD = substages[, 1] # if using SubstageDistrib function
+  cdl_b0 <- coefs[1]
+  cdl_b1 <- coefs[2]
+  # OWadultDD = substages[, 1] * DD_sd + OWadultDD_mu # if using Gaussian quadrature
   # CDL <- substages[, 1] * CDL_sd + CDL_mu
-  CDL <- CDL_mu
+  # CDL <- CDL_mu
 }else{ # doesn't make sense to do this with foreach if no variation, though!
   eggDD = eggDD_mu
   larvaeDD = larvaeDD_mu
   pupDD = pupDD_mu
   adultDD = adultDD_mu
   OWadultDD = OWadultDD_mu
-  CDL <- CDL_mu
+  # CDL <- CDL_mu
 }
-params <- data.frame(eggDD, larvaeDD, pupDD, adultDD, OWadultDD, CDL)
-# params <- data.frame(eggDD, larvaeDD, pupDD, adultDD, OWadultDD)
+# params <- data.frame(eggDD, larvaeDD, pupDD, adultDD, OWadultDD, CDL)
+params <- data.frame(eggDD, larvaeDD, pupDD, adultDD, OWadultDD, cdl_b0, cdl_b1)
 
 # idea was to cross CDL variation with GDD variation, but still 
 # runs into issue of correlations between life stage speed.
@@ -325,7 +333,9 @@ system.time({
               pupDD <- params$pupDD[sim]
               adultDD <- params$adultDD[sim]
               OWadultDD <- params$OWadultDD[sim]
-              CDL <- params$CDL[sim]
+              # CDL <- params$CDL[sim]
+              cdl_b0 <- params$cdl_b0
+              cdl_b1 <- params$cdl_b1
               
               DDaccum <- template
               # ddtotal <- template
@@ -392,7 +402,7 @@ system.time({
                 # photoperiod for this day across raster
                 if (model_CDL == 1){
                   doy <- lubridate::yday(lubridate::ymd(d))
-                  photo <- RasterPhoto(template, doy)
+                  photo <- RasterPhoto(template, doy, perc_twilight = 100)
                 }
                 
                 #### Loop through Stages; order of stages now read from SPP param file ####
@@ -682,7 +692,7 @@ system.time({
                   } else if (i == "F") { # end of the day placeholder 
                     
                     if (model_CDL == 1){
-                      # diapause decision
+                      # diapause decision with no variation
                       # add one more integer to Lifestage, 4 == diapause
                       sens_mask <- Cond(Lifestage %in% photo_sens, 1, 0)
                       diap_mask <- Cond(photo < CDL, sens_mask, 0)
@@ -690,6 +700,17 @@ system.time({
                       Lifestage <- Cond(diap_mask == 1, 4, Lifestage)
                       rm(diap_mask)
                       LS4 <- Lifestage == 4
+                      gc()
+                      
+                      # add logistic regression variation in CDL response
+                      # keep running lifecycle as if all directly developing
+                      # but add new raster to track percent of population actually
+                      # in diapause following logistic regression
+                      sens_mask <- Cond(Lifestage %in% photo_sens, 1, 0)
+                      prop_diap <- 1 - exp(cdl_b0 + cdl_b1 * photo) / 
+                        (1 + exp(cdl_b0 + cdl_b1 * photo))
+                      LS4 <- Cond(sens_mask == 1, prop_diap, LS4)
+                      rm(sens_mask, prop_diap)
                       gc()
                     }
                     
