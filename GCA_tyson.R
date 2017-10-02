@@ -62,8 +62,8 @@ prism_path <- "/data/PRISM/2014"
 source('CDL_funcs.R')
 #Daily PRISM Statistics (degree days and thresholds) for pest development models
 
-
-####Pest Specific, Multiple Life Stage Phenology Model Parameters:
+######
+######### Pest Specific, Multiple Life Stage Phenology Model Parameters:
 #LDT = lower development threshold, temp at which growth = 0 (using PRISM tmean)
 #DD = degree days, number of cumulative heat units to complete that lifestage
 start_doy  <- 1
@@ -84,11 +84,11 @@ pupaeLDT   <- 10
 pupaeUDT   <- 37.8
 adultLDT   <- 10 #for oviposition
 adultUDT   <- 37.8
-eggDD_mu = 100 #93.3
-larvaeDD_mu = 140 #136.4 # 46.9 + 45.8 + 43.7 instars
-pupDD_mu = 140 #137.7 
-adultDD_mu = 130 #125.9 #time to oviposition
-region_param <- "CONUS"
+eggDD_mu = 93.3
+larvaeDD_mu = 136.4 # 46.9 + 45.8 + 43.7 instars
+pupDD_mu = 137.7 
+adultDD_mu = 125.9 #time to oviposition
+region_param <- "TEST"
 gdd_data <- "load" # "calculate"
 gdd_file <- "meanGDD_07_13.grd"
 
@@ -96,7 +96,8 @@ REGION <- switch(region_param,
                  "CONUS"        = extent(-125.0,-66.5,24.0,50.0),
                  "NORTHWEST"    = extent(-125.1,-103.8,40.6,49.2),
                  "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612),
-                 "TEST"         = extent(-124, -122.5, 44, 45))
+                 "TEST"         = extent(-124, -122.5, 44, 45),
+                 "WEST"         = extent(-125.14, -109, 37, 49.1))
 
 # introducing individual variation, tracked with simulations
 nday <- length(start_doy:end_doy)
@@ -250,6 +251,8 @@ if (region_param == "CONUS"){
   
 }else{
   SplitMap <- list(template)
+  runs_par <- expand.grid(1:nsim, 1:length(SplitMap))
+  names(runs_par) <- c("sim", "map")
 }
 # draw parameters outside of parallel loops so all maps use same for the sims
 
@@ -299,18 +302,18 @@ dir.create(newname)
 # if errors with some sims/maps, rerun
 # use folders left in tmp file to know which didn't work
 
-
-
+#Run model
+############################
 
 system.time({
-  # outfiles <- foreach(sim = 1:nsim, 
-  outfiles <- foreach(sim = 5,
+  outfiles <- foreach(sim = 1:nsim,
+  # outfiles <- foreach(sim = 5, # if some runs don't work, rerun individually
           .packages= "raster",
           .export = c("SplitMap", "GDD", "runs_par", 
                       "newname", "params"),
           .inorder = FALSE) %:% 
-    # foreach(map = 1:length(SplitMap),
-    foreach(map = 3,
+    foreach(map = 1:length(SplitMap),
+    # foreach(map = 3, # if some runs don't work, rerun individually
             .packages = "raster",
             .export = c("SplitMap", "GDD", "runs_par", 
                         "newname", "params"),
@@ -327,6 +330,7 @@ system.time({
               
               template <- SplitMap[[map]]
               tmpGDD <- crop(GDD, template)
+              tmpGDD <- tmpGDD[[start_doy:end_doy]]
               # foreach(sim = 1:nsim, .packages= "raster") %dopar% {
               
               #Initialize all tracking rasters as zero with the template
@@ -377,6 +381,7 @@ system.time({
               LS1 <- Lifestage == 1
               LS2 <- Lifestage == 2
               LS3 <- Lifestage == 3
+              LS4 <- Lifestage == 4
               
               
               
@@ -838,7 +843,7 @@ system.time({
               LS3File <- writeRaster(LS3stack, filename = paste(newname, "/LS3_", mapcode, "_sim", sim, sep = ""),
                                      overwrite = TRUE, datatype = "INT1U")
               LS4File <- writeRaster(LS4stack, filename = paste(newname, "/LS4_", mapcode, "_sim", sim, sep = ""),
-                                     overwrite = TRUE, datatype = "INT1U")
+                                     overwrite = TRUE, datatype = "FLT8S")
               
               rasfiles <- 
               #################
@@ -892,7 +897,7 @@ system.time({
             } #foreach loop
 }) #system.time
 
-  
+################################  
 
 # then have to retrieve files and mosaic back together
 # TODO: this is very slow, maybe parallelize this
