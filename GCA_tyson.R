@@ -110,6 +110,13 @@ vary_indiv <- 1 # turn on indiv. variation
 # substages <- gauss.hermite(11, iterlim = 50)[3:9, ] # remove ends with near zero weights
 
 # Take empirical distribution and calculate substages
+# OW oviposition distribution
+eggdist <- dbeta(x = seq(0, 1, length.out = 1000), 
+                 shape1 = 3.888677, shape2 = 2.174208)
+inputdist <- data.frame(x = seq(59.6, 223.3677, length.out = 1000),
+                        y = eggdist)
+inputdist$CDF <- cumsum(inputdist$y) / sum(inputdist$y, na.rm = TRUE)
+
 substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
 
 
@@ -692,16 +699,18 @@ system.time({
                   } else if (i == "F") { # end of the day placeholder 
                     
                     if (model_CDL == 1){
-                      # diapause decision with no variation
-                      # add one more integer to Lifestage, 4 == diapause
-                      sens_mask <- Cond(Lifestage %in% photo_sens, 1, 0)
-                      diap_mask <- Cond(photo < CDL, sens_mask, 0)
-                      rm(sens_mask)
-                      Lifestage <- Cond(diap_mask == 1, 4, Lifestage)
-                      rm(diap_mask)
-                      LS4 <- Lifestage == 4
-                      gc()
+                      # # First try
+                      # # diapause decision with no variation
+                      # # add one more integer to Lifestage, 4 == diapause
+                      # sens_mask <- Cond(Lifestage %in% photo_sens, 1, 0)
+                      # diap_mask <- Cond(photo < CDL, sens_mask, 0)
+                      # rm(sens_mask)
+                      # Lifestage <- Cond(diap_mask == 1, 4, Lifestage)
+                      # rm(diap_mask)
+                      # LS4 <- Lifestage == 4
+                      # gc()
                       
+                      # Second Try
                       # add logistic regression variation in CDL response
                       # keep running lifecycle as if all directly developing
                       # but add new raster to track percent of population actually

@@ -286,15 +286,17 @@ preddat$y <- predict(mod, newdata = preddat, exclude = "s(Site)", type = "respon
 preddat$RelProp <- preddat$y / max(preddat$y, na.rm = TRUE)
 eggpred <- preddat # for later analysis
 
-ovi_rate <- diff(eggpred$RelProp, lag = 1)
+ovi_rate <- diff(eggpred$y, lag = 1)
 # cut off distribution when oviposition rate hits 0
 ovi_rate <- ovi_rate[1:(which(ovi_rate < 0)[1] - 1)]
-plot(eggpred$GDD[1:length(ovi_rate)], ovi_rate * 1000)
+eggpred_cut <- eggpred[1:length(ovi_rate), ]
+eggpred_cut$ovi_rate <- ovi_rate
+plot(eggpred_cut$GDD, ovi_rate)
 
 
 
-gamdist <- eggpred %>% 
-  mutate(CDF = cumsum(y) / sum(y, na.rm = TRUE),
+gamdist <- eggpred_cut %>% 
+  mutate(CDF = cumsum(ovi_rate) / sum(ovi_rate, na.rm = TRUE),
          x = GDD)
 
 test <- SubstageDistrib(dist = gamdist, numstage = 7, perc = .99)
@@ -303,28 +305,33 @@ test <- SubstageDistrib(dist = gamdist, numstage = 7, perc = .99)
 A beta distribution fits best
 
 ```{r try fitting package}
-# need to take curve above and draw out discrete observations
-draws <- rpois(n = length(ovi_rate), lambda = ovi_rate * 1000)
-gdd_obs <- rep(eggpred$GDD[1:length(ovi_rate)], times = draws)
+# # need to take curve above and draw out discrete observations
+# draws <- rpois(n = nrow(eggpred_cut), lambda = eggpred_cut$y)
+# gdd_obs <- rep(eggpred_cut$GDD, times = draws)
+# gdd_obs <- (gdd_obs - min(gdd_obs)) / (max(gdd_obs) - min(gdd_obs))
 # hist(gdd_obs)
+# ovi_rate <- diff(gdd_obs, lag = 1)
 
-descdist(gdd_obs, discrete = FALSE)
-fit.beta <- fitdist(gdd_obs/(max(gdd_obs) + 1), "beta")
-fit.norm <- fitdist(gdd_obs/(max(gdd_obs) + 1), "norm")
-fit.gamm <- fitdist(gdd_obs, "gamma")
+# from gam predictions more directly
+gdd_obs <- rep(eggpred_cut$GDD, times = eggpred_cut$ovi_rate)
+zgdd_obs <- (gdd_obs - min(gdd_obs)) / (max(gdd_obs) - min(gdd_obs))
 
-# descdist(gdd_obs, discrete = TRUE)
-# fit.norm <- fitdist(gdd_obs, "norm")
-# fit.pois <- fitdist(gdd_obs, "pois")
-# fit.nbin <- fitdist(gdd_obs, "nbinom")
+
+descdist(zgdd_obs, discrete = FALSE)
+fit.beta <- fitdist(zgdd_obs, "beta", method = "mme")
+
 ```
 
 Update the above graph with the selected beta distribution for oviposition.
 
 ```{r updated graph}
-eggdist <- dbeta(x = seq(0,1, length.out = length(gdd_obs)), shape1 = fit.beta$estimate[1], shape2 = fit.beta$estimate[2])
+eggdist <- dbeta(x = seq(0,1, length.out = length(gdd_obs)), 
+                 shape1 = fit.beta$estimate[1], shape2 = fit.beta$estimate[2])
 eggdist <- (eggdist / max(eggdist))
-egg.df <- data.frame(GDD = gdd_obs, RelProp = eggdist, Site = "Beta")
+egg.df <- data.frame(GDD = seq(min(eggpred_cut$GDD), 
+                               max(eggpred_cut$GDD), 
+                               length.out = length(gdd_obs)), 
+                     RelProp = eggdist, Site = "Beta")
 
 plt_ad <- plt_adult +
   geom_point(aes(x = 256.2, y = 1, color = "Coeburn"), shape = 17, size = 3) +
