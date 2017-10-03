@@ -62,19 +62,19 @@ prism_path <- "/data/PRISM/2014"
 source('CDL_funcs.R')
 #Daily PRISM Statistics (degree days and thresholds) for pest development models
 
-
-####Pest Specific, Multiple Life Stage Phenology Model Parameters:
+######
+######### Pest Specific, Multiple Life Stage Phenology Model Parameters:
 #LDT = lower development threshold, temp at which growth = 0 (using PRISM tmean)
 #DD = degree days, number of cumulative heat units to complete that lifestage
 start_doy  <- 1
 end_doy    <- 365
 stgorder   <- c("OA","E","L","P","A","F")
 photo_sens <- 3 #c(-1, 3) # integer life stages for now
-CDL_mu        <- 14.25
+CDL_mu        <- 16.23 # 15.52
 model_CDL  <- 1 # if 1, model photoperiod decision
-CDL_log    <- 1 # if 1, model CDL from logistic regression results
+CDL_log    <- 0 # if 1, model CDL from logistic regression results
 owstage    <- "OA"
-OWadultDD_mu  <- 100 #108 # text OW stage dev 39 DD "post diapause"
+OWadultDD_mu  <- 167.6 #108 # text OW stage dev 39 DD "post diapause"
 calctype   <-"triangle"
 eggLDT     <- 10
 eggUDT     <- 37.8  #
@@ -84,11 +84,11 @@ pupaeLDT   <- 10
 pupaeUDT   <- 37.8
 adultLDT   <- 10 #for oviposition
 adultUDT   <- 37.8
-eggDD_mu = 100 #93.3
-larvaeDD_mu = 140 #136.4 # 46.9 + 45.8 + 43.7 instars
-pupDD_mu = 140 #137.7 
-adultDD_mu = 130 #125.9 #time to oviposition
-region_param <- "CONUS"
+eggDD_mu = 93.3
+larvaeDD_mu = 136.4 # 46.9 + 45.8 + 43.7 instars
+pupDD_mu = 137.7 
+adultDD_mu = 125.9 #time to oviposition
+region_param <- "WEST"
 gdd_data <- "load" # "calculate"
 gdd_file <- "meanGDD_07_13.grd"
 
@@ -96,15 +96,21 @@ REGION <- switch(region_param,
                  "CONUS"        = extent(-125.0,-66.5,24.0,50.0),
                  "NORTHWEST"    = extent(-125.1,-103.8,40.6,49.2),
                  "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612),
-                 "TEST"         = extent(-124, -122.5, 44, 45))
+                 "TEST"         = extent(-124, -122.5, 44, 45),
+                 "WEST"         = extent(-125.14, -109, 37, 49.1))
 
 # introducing individual variation, tracked with simulations
 nday <- length(start_doy:end_doy)
-nsim <- 7 # for now, use square number
 
-DD_sd <- 10
-CDL_sd <- .1
-vary_indiv <- 1 # turn on indiv. variation
+DD_sd <- 0
+CDL_sd <- 0
+vary_indiv <- 0 # turn on indiv. variation
+
+if (vary_indiv == 1){
+  nsim <- 7 # number of substages
+}else{
+  nsim <- 1
+}
 
 # # Gaussian quadrature to assign number/weights for substages
 # substages <- gauss.hermite(11, iterlim = 50)[3:9, ] # remove ends with near zero weights
@@ -117,13 +123,13 @@ inputdist <- data.frame(x = seq(59.6, 223.3677, length.out = 1000),
                         y = eggdist)
 inputdist$CDF <- cumsum(inputdist$y) / sum(inputdist$y, na.rm = TRUE)
 
-substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
+substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
 
 
 # Logistic regression photoperiod
 # from Fritzi's lab data, two different populations
-coefs <- c(-56.9745, 3.5101) # Northern
-# coefs <- c(-60.3523, 3.8888) # Southern
+# coefs <- c(-56.9745, 3.5101) # Northern
+coefs <- c(-60.3523, 3.8888) # Southern
 
 
 # try to run sims in parallel and also split map if large REGION
@@ -250,6 +256,8 @@ if (region_param == "CONUS"){
   
 }else{
   SplitMap <- list(template)
+  runs_par <- expand.grid(1:nsim, 1:length(SplitMap))
+  names(runs_par) <- c("sim", "map")
 }
 # draw parameters outside of parallel loops so all maps use same for the sims
 
@@ -272,16 +280,16 @@ if (vary_indiv == 1){
   # OWadultDD = substages[, 1] * DD_sd + OWadultDD_mu # if using Gaussian quadrature
   # CDL <- substages[, 1] * CDL_sd + CDL_mu
   # CDL <- CDL_mu
+  params <- data.frame(eggDD, larvaeDD, pupDD, adultDD, OWadultDD, cdl_b0, cdl_b1)
 }else{ # doesn't make sense to do this with foreach if no variation, though!
   eggDD = eggDD_mu
   larvaeDD = larvaeDD_mu
   pupDD = pupDD_mu
   adultDD = adultDD_mu
   OWadultDD = OWadultDD_mu
-  # CDL <- CDL_mu
+  CDL <- CDL_mu
+  params <- data.frame(eggDD, larvaeDD, pupDD, adultDD, OWadultDD, CDL)
 }
-# params <- data.frame(eggDD, larvaeDD, pupDD, adultDD, OWadultDD, CDL)
-params <- data.frame(eggDD, larvaeDD, pupDD, adultDD, OWadultDD, cdl_b0, cdl_b1)
 
 # idea was to cross CDL variation with GDD variation, but still 
 # runs into issue of correlations between life stage speed.
@@ -299,22 +307,24 @@ dir.create(newname)
 # if errors with some sims/maps, rerun
 # use folders left in tmp file to know which didn't work
 
-
-
+#Run model
+############################
 
 system.time({
-  # outfiles <- foreach(sim = 1:nsim, 
-  outfiles <- foreach(sim = 5,
+  outfiles <- foreach(sim = 1:nsim,
+  # outfiles <- foreach(sim = 5, # if some runs don't work, rerun individually
           .packages= "raster",
           .export = c("SplitMap", "GDD", "runs_par", 
                       "newname", "params"),
           .inorder = FALSE) %:% 
-    # foreach(map = 1:length(SplitMap),
-    foreach(map = 3,
+    foreach(map = 1:length(SplitMap),
+    # foreach(map = 3, # if some runs don't work, rerun individually
             .packages = "raster",
             .export = c("SplitMap", "GDD", "runs_par", 
                         "newname", "params"),
-            .inorder = FALSE) %dopar%{
+            # .inorder = FALSE) %dopar%{
+              .inorder = FALSE) %do%{
+                
               # map <- runs_par$map[run]
               # sim <- runs_par$sim[run]
               
@@ -327,6 +337,7 @@ system.time({
               
               template <- SplitMap[[map]]
               tmpGDD <- crop(GDD, template)
+              tmpGDD <- tmpGDD[[start_doy:end_doy]]
               # foreach(sim = 1:nsim, .packages= "raster") %dopar% {
               
               #Initialize all tracking rasters as zero with the template
@@ -377,6 +388,7 @@ system.time({
               LS1 <- Lifestage == 1
               LS2 <- Lifestage == 2
               LS3 <- Lifestage == 3
+              LS4 <- Lifestage == 4
               
               
               
@@ -699,28 +711,28 @@ system.time({
                   } else if (i == "F") { # end of the day placeholder 
                     
                     if (model_CDL == 1){
-                      # # First try
-                      # # diapause decision with no variation
-                      # # add one more integer to Lifestage, 4 == diapause
-                      # sens_mask <- Cond(Lifestage %in% photo_sens, 1, 0)
-                      # diap_mask <- Cond(photo < CDL, sens_mask, 0)
-                      # rm(sens_mask)
-                      # Lifestage <- Cond(diap_mask == 1, 4, Lifestage)
-                      # rm(diap_mask)
-                      # LS4 <- Lifestage == 4
-                      # gc()
-                      
-                      # Second Try
-                      # add logistic regression variation in CDL response
-                      # keep running lifecycle as if all directly developing
-                      # but add new raster to track percent of population actually
-                      # in diapause following logistic regression
+                      # First try
+                      # diapause decision with no variation
+                      # add one more integer to Lifestage, 4 == diapause
                       sens_mask <- Cond(Lifestage %in% photo_sens, 1, 0)
-                      prop_diap <- 1 - exp(cdl_b0 + cdl_b1 * photo) / 
-                        (1 + exp(cdl_b0 + cdl_b1 * photo))
-                      LS4 <- Cond(sens_mask == 1, prop_diap, LS4)
-                      rm(sens_mask, prop_diap)
+                      diap_mask <- Cond(photo < CDL, sens_mask, 0)
+                      rm(sens_mask)
+                      Lifestage <- Cond(diap_mask == 1, 4, Lifestage)
+                      rm(diap_mask)
+                      LS4 <- Lifestage == 4
                       gc()
+                      
+                      # # Second Try
+                      # # add logistic regression variation in CDL response
+                      # # keep running lifecycle as if all directly developing
+                      # # but add new raster to track percent of population actually
+                      # # in diapause following logistic regression
+                      # sens_mask <- Cond(Lifestage %in% photo_sens, 1, 0)
+                      # prop_diap <- 1 - exp(cdl_b0 + cdl_b1 * photo) / 
+                      #   (1 + exp(cdl_b0 + cdl_b1 * photo))
+                      # LS4 <- Cond(sens_mask == 1, prop_diap, LS4)
+                      # rm(sens_mask, prop_diap)
+                      # gc()
                     }
                     
                     # update lifestage masks
@@ -838,7 +850,7 @@ system.time({
               LS3File <- writeRaster(LS3stack, filename = paste(newname, "/LS3_", mapcode, "_sim", sim, sep = ""),
                                      overwrite = TRUE, datatype = "INT1U")
               LS4File <- writeRaster(LS4stack, filename = paste(newname, "/LS4_", mapcode, "_sim", sim, sep = ""),
-                                     overwrite = TRUE, datatype = "INT1U")
+                                     overwrite = TRUE, datatype = "FLT8S")
               
               rasfiles <- 
               #################
@@ -892,7 +904,7 @@ system.time({
             } #foreach loop
 }) #system.time
 
-  
+################################  
 
 # then have to retrieve files and mosaic back together
 # TODO: this is very slow, maybe parallelize this
