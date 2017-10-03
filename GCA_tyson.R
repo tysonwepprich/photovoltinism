@@ -70,7 +70,7 @@ start_doy  <- 1
 end_doy    <- 365
 stgorder   <- c("OA","E","L","P","A","F")
 photo_sens <- 3 #c(-1, 3) # integer life stages for now
-CDL_mu        <- 15.52
+CDL_mu        <- 16.23 # 15.52
 model_CDL  <- 1 # if 1, model photoperiod decision
 CDL_log    <- 0 # if 1, model CDL from logistic regression results
 owstage    <- "OA"
@@ -421,7 +421,7 @@ system.time({
                 # photoperiod for this day across raster
                 if (model_CDL == 1){
                   doy <- lubridate::yday(lubridate::ymd(d))
-                  photo <- RasterPhoto(template, doy, perc_twilight = 25)
+                  photo <- RasterPhoto(template, doy, perc_twilight = 100)
                 }
                 
                 #### Loop through Stages; order of stages now read from SPP param file ####

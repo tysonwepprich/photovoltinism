@@ -1,9 +1,70 @@
 # summarize raster results from DDRP models
 
+library(sp)
+library(rgdal)
+library(raster)
+
+rasterOptions(overwrite = FALSE, 
+              chunksize = 1e+07,
+              maxmemory = 1e+08)
+
+# for parallel simulations with control over seed for reproducibility
+library(doRNG)
+library(foreach) # for parallelized loops
+library(doMC) 
+
+library(ggplot2)
+library(viridis)
+library(mapdata)
+library(dplyr)
+library(tidyr)
+theme_set(theme_bw(base_size = 14)) 
+
+library(gridExtra)
+library(grid)
+# results directory
+newname <- "old_west_SCDL_25twil"
+
+source('CDL_funcs.R')
+region_param <- "WEST"
+gdd_file <- "meanGDD_07_13.grd"
+
+REGION <- switch(region_param,
+                 "CONUS"        = extent(-125.0,-66.5,24.0,50.0),
+                 "NORTHWEST"    = extent(-125.1,-103.8,40.6,49.2),
+                 "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612),
+                 "TEST"         = extent(-124, -122.5, 44, 45),
+                 "WEST"         = extent(-125.14, -109, 37, 49.1))
+
+states <- map_data("state", xlim = c(REGION@xmin, REGION@xmax),
+                   ylim = c(REGION@ymin, REGION@ymax), lforce = "e")
+names(states)[1:2] <- c("x", "y")
+
+GDD <- brick(gdd_file)
+
+template <- GDD[[1]]
+template[!is.na(template)] <- 0
+template <- crop(template, REGION)
+
+# coordinates as examples
+sites <- data.frame(ID = c("Corvallis", "Richland", "JB Lewis-McCord", "Yuba City"),
+                    x = c(-123.263, -119.283, -122.53, -121.615),
+                    y = c(44.564, 46.275, 47.112, 39.14))
+
+# Take empirical distribution and calculate substages
+# OW oviposition distribution
+eggdist <- dbeta(x = seq(0, 1, length.out = 1000), 
+                 shape1 = 3.888677, shape2 = 2.174208)
+inputdist <- data.frame(x = seq(59.6, 223.3677, length.out = 1000),
+                        y = eggdist)
+inputdist$CDF <- cumsum(inputdist$y) / sum(inputdist$y, na.rm = TRUE)
+
+substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
+
 
 ####################################
 # Weighted results by substage sizes
-
+# Not needed for older model with only one parameter per stage
 returnwd <- getwd()
 setwd(newname)
 
@@ -30,7 +91,8 @@ foreach(i = ls, .packages = "raster") %dopar% {
 }
 
 setwd(returnwd)
-
+#####################
+# quick plots of results
 
 res <- brick(paste(newname, "/", "LS2_001_sim4.grd", sep = ""))
 res <- brick(paste(newname, "/", "NumGen_001_sim7.grd", sep = ""))
@@ -44,47 +106,54 @@ res <- brick(paste(newname, "/", "NumGen_weighted.grd", sep = ""))
 plot(res[[seq(100, 360, 50)]])
 plot(res[[seq(150, 250, 20)]])
 plot(res[[seq(180, 220, 5)]])
-
+################
 
 # diapause/numgen time series
 # shows rapid change, only if within sensitive stage
+# plot CDL as it moves through time and space
+
+
+res <- brick(paste(newname, "/", "LS4_001_sim1.grd", sep = ""))
+
 test <- vector()
 gdd <- vector()
 cell <- 100000
 tmpGDD <- crop(GDD, template)
 
+# first try
 for (i in 1:nlayers(res)){
   test[i] <- res[[i]][cell]
   gdd[i] <- tmpGDD[[i]][cell]
 }
 plot(cumsum(gdd), test)
 
+# with extract, much easier
+test <- raster::extract(res, y = sites[1, 2:3])
+gdd <- raster::extract(GDD, y = sites[1, 2:3])
+plot(cumsum(gdd), test)
+
+
 # plot weighted lifestages on same scale
-library(ggplot2)
-library(viridis)
-library(mapdata)
-library(dplyr)
-library(tidyr)
 states <- map_data("state", xlim = c(REGION@xmin, REGION@xmax),
                    ylim = c(REGION@ymin, REGION@ymax), lforce = "e")
 names(states)[1:2] <- c("x", "y")
 
-
+names(res) <- paste("d", formatC(1:nlayers(res), width = 3, format = "d", flag = "0"), sep = "")
 df = as.data.frame(res, xy=TRUE)
 df1 <- df %>% 
-  gather(key = "DOY", value = "Perc_diapause", layer.1:layer.365) %>% 
-  mutate(DOY = as.numeric(stringr::str_split_fixed(DOY, pattern = "layer.", n = 2)[, 2])) %>% 
-  filter(DOY %in% seq(100, 365, 5))
+  tidyr::gather(key = "DOY", value = "Perc_diapause", d001:d365) %>% 
+  dplyr::mutate(DOY = as.numeric(gsub(pattern = "d", replacement = "", x = .$DOY))) %>% 
+  dplyr::filter(DOY %in% seq(100, 365, 5))
 df2 <- df1 %>% 
-  filter(DOY %in% seq(150, 220, 5))
+  filter(DOY %in% seq(150, 220, 10))
 
 
 logit <- function(p){log(p/(1-p))}
 # CDL <- (logit(.5) - -56.9745)/3.5101 #Northern
 CDL <- (logit(.5) - -60.3523)/3.8888 #Southern
-FindApproxLat4CDL <- function(ras, doy, cdl){
+FindApproxLat4CDL <- function(ras, doy, cdl, degtwil){
   ys <- seq(extent(ras)@ymin, extent(ras)@ymax, .01)
-  hours <- photoperiod(lat = ys, doy = doy, p = 6)
+  hours <- photoperiod(lat = ys, doy = doy, p = degtwil)
   lat <- ys[which(abs(hours - cdl) == min(abs(hours - cdl)))]
   return(lat)
 }
@@ -93,8 +162,8 @@ FindApproxLat4CDL <- function(ras, doy, cdl){
 photo_df <- data.frame(DOY = seq(100, 365, 5))
 photo_df <- photo_df %>% 
   rowwise() %>% 
-  mutate(lat = FindApproxLat4CDL(template, DOY, CDL)) %>% 
-  filter(DOY %in% seq(150, 220, 5))
+  mutate(lat = FindApproxLat4CDL(template, DOY, CDL, 1.5)) %>% 
+  filter(DOY %in% seq(150, 220, 10))
 
 
 plt <- ggplot(df2, aes(x, y)) +
@@ -102,7 +171,7 @@ plt <- ggplot(df2, aes(x, y)) +
   scale_fill_viridis(na.value = "white") + 
   geom_polygon(data = states, aes(group = group), fill = NA, color = "black", size = .1) +
   geom_hline(data = photo_df, aes(yintercept = lat), color = "white") +
-  facet_wrap(~DOY, nrow = 3) +
+  facet_wrap(~DOY, nrow = 2) +
   coord_fixed(1.3) +
   # annotate("text", x = -73, y = 30, label = "Earliest substage") +
   theme(axis.line=element_blank(),axis.text.x=element_blank(),
@@ -121,7 +190,68 @@ plt
 
 
 
+######
+# Plot all lifestages for a particular day
+newname <- "new_west_SCDL_25twil"
+# loop to grab all lifestage results on a certain day to plot together
+# save in one giant data.frame to use for plots
+returnwd <- getwd()
+setwd(newname)
 
+f <-list.files()
+days <- seq(100, 300, 50)
+rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
+dflist <- list()
+for (i in rasfiles){
+  res <- brick(i)
+  # fix NA problem, just assigned as zero
+  res <- res + template # template is all zeros and NA
+  ls <- unique(stringr::str_split_fixed(i, pattern = "_", 2)[,1])
+  for (j in days){
+    df <- as.data.frame(res[[j]], xy=TRUE)
+    names(df)[3] <- "Percent_of_simulations"
+    df$doy <- j
+    df$lifestage <- ls
+    dflist[[length(dflist)+1]] <- df
+  }
+}
+resdf <- dplyr::bind_rows(dflist)
+names(resdf)[3] <- "Present"
+setwd(returnwd)
+
+
+pltlist <- list()
+lifestages <- sort(unique(resdf$lifestage))[-6] # remove OW for even 6
+ls_labels <- c("egg", "larva", "pupa", "adult", "diapause", "voltinism")
+for (d in days){
+  for (p in 1:length(lifestages)){
+    pltdf <- resdf %>% 
+      filter(lifestage == lifestages[p], 
+             doy == d)
+      tmpplt <- ggplot(pltdf, aes(x, y, fill = Present)) +
+        geom_raster() +
+        geom_polygon(data = states, aes(group = group), fill = NA, color = "black", size = .1) +
+        theme_bw() +
+        ggtitle(ls_labels[p])
+      if(max(pltdf$Present, na.rm = TRUE) == 0){
+        tmpplt <- tmpplt +
+          scale_fill_viridis(na.value = "white", begin = 0, end = 0) 
+      }else{
+        tmpplt <- tmpplt +
+          scale_fill_viridis(na.value = "white", begin = 0, end = 1)  
+      }
+      pltlist[[length(pltlist)+1]] <- tmpplt
+  }
+}
+
+for (i in 1:length(days)){
+  index <- (i*length(lifestages) - (length(lifestages) - 1)):(i*length(lifestages))
+  plt <- grid.arrange(grobs = pltlist[index],
+                      ncol = 2,
+                      top = paste("DOY", days[i], sep = " "))
+  ggsave(paste("DOY", days [i], ".png", sep = ""),
+         plot = plt, device = "png", width = 12, height = 12, units = "in")
+}
 
 
 
