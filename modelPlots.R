@@ -23,7 +23,7 @@ theme_set(theme_bw(base_size = 14))
 library(gridExtra)
 library(grid)
 # results directory
-newname <- "old_west_SCDL_25twil"
+newname <- "new_west_NCDL_25twil"
 
 source('CDL_funcs.R')
 region_param <- "WEST"
@@ -59,6 +59,7 @@ inputdist <- data.frame(x = seq(59.6, 223.3677, length.out = 1000),
                         y = eggdist)
 inputdist$CDF <- cumsum(inputdist$y) / sum(inputdist$y, na.rm = TRUE)
 
+nsim <- 7
 substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
 
 
@@ -76,8 +77,10 @@ ls <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1])
 # maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,2])
 # sims <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,3])
 # sims <- gsub(pattern = ".grd", replacement = "", x = sims)
-
+ncores <- 7
+registerDoMC(cores = ncores)
 # this loop takes a lot of time
+
 foreach(i = ls, .packages = "raster") %dopar% {
   fs <- sort(rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)])
   ll <- replicate(nlayers(brick(fs[1])), template)
