@@ -23,7 +23,7 @@ theme_set(theme_bw(base_size = 14))
 library(gridExtra)
 library(grid)
 # results directory
-newname <- "new_west_NCDL_25twil"
+newname <- "new_west_SCDL_100twil"
 
 source('CDL_funcs.R')
 region_param <- "WEST"
@@ -97,7 +97,7 @@ setwd(returnwd)
 #####################
 # quick plots of results
 
-res <- brick(paste(newname, "/", "LS2_001_sim4.grd", sep = ""))
+res <- brick(paste(newname, "/", "LS2_001_sim1.grd", sep = ""))
 res <- brick(paste(newname, "/", "NumGen_001_sim7.grd", sep = ""))
 NAvalue(res) <- 200
 
@@ -116,23 +116,23 @@ plot(res[[seq(180, 220, 5)]])
 # plot CDL as it moves through time and space
 
 
-res <- brick(paste(newname, "/", "LS4_001_sim1.grd", sep = ""))
-
-test <- vector()
-gdd <- vector()
-cell <- 100000
-tmpGDD <- crop(GDD, template)
-
-# first try
-for (i in 1:nlayers(res)){
-  test[i] <- res[[i]][cell]
-  gdd[i] <- tmpGDD[[i]][cell]
-}
-plot(cumsum(gdd), test)
+res <- brick(paste(newname, "/", "LS4_weighted.grd", sep = ""))
+# 
+# test <- vector()
+# gdd <- vector()
+# cell <- 100000
+# tmpGDD <- crop(GDD, template)
+# 
+# # first try
+# for (i in 1:nlayers(res)){
+#   test[i] <- res[[i]][cell]
+#   gdd[i] <- tmpGDD[[i]][cell]
+# }
+# plot(cumsum(gdd), test)
 
 # with extract, much easier
-test <- raster::extract(res, y = sites[1, 2:3])
-gdd <- raster::extract(GDD, y = sites[1, 2:3])
+test <- raster::extract(res, y = sites[, 2:3])
+gdd <- raster::extract(GDD, y = sites[, 2:3])
 plot(cumsum(gdd), test)
 
 
@@ -148,7 +148,7 @@ df1 <- df %>%
   dplyr::mutate(DOY = as.numeric(gsub(pattern = "d", replacement = "", x = .$DOY))) %>% 
   dplyr::filter(DOY %in% seq(100, 365, 5))
 df2 <- df1 %>% 
-  filter(DOY %in% seq(150, 220, 10))
+  filter(DOY %in% seq(120, 230, 15))
 
 
 logit <- function(p){log(p/(1-p))}
@@ -160,13 +160,20 @@ FindApproxLat4CDL <- function(ras, doy, cdl, degtwil){
   lat <- ys[which(abs(hours - cdl) == min(abs(hours - cdl)))]
   return(lat)
 }
+# Make this function select doy where photo time series crossing zero multiple times
+# FindApproxDOY4CDL <- function(ras, lat, cdl, degtwil){
+#   doy <- seq(1, 365, 1)
+#   hours <- photoperiod(lat = lat, doy = doy, p = degtwil)
+#   doys <- doy[which(abs(hours - cdl) == min(abs(hours - cdl)))]
+#   return(doys)
+# }
 
 
 photo_df <- data.frame(DOY = seq(100, 365, 5))
 photo_df <- photo_df %>% 
   rowwise() %>% 
-  mutate(lat = FindApproxLat4CDL(template, DOY, CDL, 1.5)) %>% 
-  filter(DOY %in% seq(150, 220, 10))
+  mutate(lat = FindApproxLat4CDL(template, DOY, CDL, 6)) %>% 
+  filter(DOY %in% seq(120, 230, 15))
 
 
 plt <- ggplot(df2, aes(x, y)) +
@@ -185,11 +192,86 @@ plt <- ggplot(df2, aes(x, y)) +
         panel.grid.minor=element_blank(),plot.background=element_blank())
 plt
 
+ggsave(paste("NEW","CDL", ".png", sep = ""),
+       plot = plt, device = "png", width = 10, height = 6, units = "in")
 
 
 
 ######
 # Number of generations when diapause is a %???
+
+
+
+
+######
+# plot time series of each stage
+returnwd <- getwd()
+setwd(newname)
+
+f <-list.files()
+rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
+rasfiles <- rasfiles[grep(pattern = "weighted", x = rasfiles, fixed = TRUE)]
+
+tmp <- list()
+for (i in rasfiles){
+  ls <- unique(stringr::str_split_fixed(i, pattern = "_", 2)[,1])
+  res <- brick(i)
+  names(res) <- paste("d", formatC(1:nlayers(res), width = 3, format = "d", flag = "0"), sep = "")
+
+  stage_prop <- raster::extract(res, y = sites[, 2:3])
+  stage_prop <- cbind(sites, stage_prop)
+  stage_prop <- stage_prop %>% 
+    tidyr::gather(key = "DOY", value = "Proportion", d001:d365) %>% 
+    dplyr::mutate(DOY = as.numeric(gsub(pattern = "d", replacement = "", x = .$DOY)))
+  gdd <- raster::extract(GDD, y = sites[, 2:3])
+  gdd <- cbind(sites, gdd)
+  gdd <- gdd %>% 
+    tidyr::gather(key = "DOY", value = "GDD", layer.1:layer.365) %>% 
+    dplyr::mutate(DOY = as.numeric(gsub(pattern = "layer.", replacement = "", x = .$DOY))) %>% 
+    group_by(ID) %>% 
+    arrange(DOY) %>% 
+    dplyr::mutate(Accum_GDD = cumsum(GDD))
+  outdf <- left_join(stage_prop, gdd)
+  outdf$Lifestage <- ls
+  tmp[[length(tmp) + 1]] <- outdf
+}
+tsdat <- bind_rows(tmp) %>% 
+  filter(Lifestage != "NumGen")
+
+setwd(returnwd)
+
+
+tsdat$Lifestage <- factor(tsdat$Lifestage, c("LSOW", "LS0", "LS1", "LS2", "LS3", "LS4"))
+levels(tsdat$Lifestage) <- c("Overwinter", "Egg", "Larva", "Pupa", "Adult", "Diapause")
+tsdat$ID <- factor(tsdat$ID, c("JB Lewis-McCord", "Richland", "Corvallis", "Yuba City"))
+
+pltdat <- tsdat %>% 
+  filter(Lifestage %in% c("Egg", "Diapause"))
+                          
+# plt <- ggplot(pltdat, aes(x = DOY, y = Proportion, group = Lifestage, color = Lifestage)) +
+#   geom_line(size = 2) +
+#   facet_wrap(~ID, ncol = 1)
+# plt
+# ggsave(paste("NEW","LifestageTS", ".png", sep = ""),
+#        plot = plt, device = "png", width = 8, height = 6, units = "in")
+
+# multiply egg and diapause
+diap <- pltdat$Proportion[pltdat$Lifestage == "Diapause"]
+pltdat1 <- pltdat %>% 
+  filter(Lifestage == "Egg") %>% 
+  mutate(Proportion = Proportion * (1 - diap))
+pltdat2 <- pltdat %>% filter(Lifestage == "Diapause") 
+pltdat <- rbind(pltdat1, pltdat2)
+
+plt <- ggplot(pltdat, aes(x = DOY, y = Proportion, group = Lifestage, color = Lifestage)) +
+  geom_line(size = 2) +
+  facet_wrap(~ID, ncol = 1)
+plt
+ggsave(paste(newname,"LifestageTS", ".png", sep = ""),
+       plot = plt, device = "png", width = 8, height = 6, units = "in")
+
+
+
 
 
 
@@ -202,8 +284,10 @@ returnwd <- getwd()
 setwd(newname)
 
 f <-list.files()
-days <- seq(100, 300, 50)
+days <- seq(100, 350, 50)
 rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
+rasfiles <- rasfiles[grep(pattern = "weighted", x = rasfiles, fixed = TRUE)]
+
 dflist <- list()
 for (i in rasfiles){
   res <- brick(i)
@@ -252,10 +336,52 @@ for (i in 1:length(days)){
   plt <- grid.arrange(grobs = pltlist[index],
                       ncol = 2,
                       top = paste("DOY", days[i], sep = " "))
-  ggsave(paste("DOY", days [i], ".png", sep = ""),
+  ggsave(paste("NEWDOY", days [i], ".png", sep = ""),
          plot = plt, device = "png", width = 12, height = 12, units = "in")
 }
 
+
+# plot just NumGen
+
+pltdf <- resdf %>% 
+  filter(lifestage == "NumGen", 
+         doy == 350) %>% 
+  mutate(Voltinism = Present)
+tmpplt <- ggplot(data = pltdf, aes(x, y, fill = Voltinism)) +
+  geom_raster() +
+  geom_polygon(data = states, aes(group = group), fill = NA, color = "black", inherit.aes = TRUE, size = .1) +
+  theme_bw() +
+  scale_fill_viridis(na.value = "white", begin = 0, end = 1)  +
+  geom_point(data = sites, aes(x = x, y = y), size = 3, color = "black", inherit.aes = FALSE)
+  # geom_text(data = sites, aes(x = x, y = y, label = ID), inherit.aes = FALSE) + 
+  # ggtitle(ls_labels[p])
+tmpplt
+ggsave(paste("NEW","NumGen", ".png", sep = ""),
+       plot = tmpplt, device = "png", width = 6, height = 6, units = "in")
+
+# with partial generations considered
+pltdf <- resdf %>% 
+  filter(lifestage == "NumGen") %>% 
+  mutate(Voltinism = Present)
+filtdf <- resdf %>% 
+  filter(lifestage == "LS4")
+pltdf$Voltinism[which(filtdf$Present >= .75)] <- 0
+pltdf <- pltdf %>% 
+  group_by(x, y) %>% 
+  summarise(Voltinism = max(Voltinism))
+
+
+tmpplt <- ggplot(data = pltdf, aes(x, y, fill = Voltinism)) +
+  geom_raster() +
+  geom_polygon(data = states, aes(group = group), fill = NA, color = "black", inherit.aes = TRUE, size = .1) +
+  theme_bw() +
+  scale_fill_viridis(na.value = "white", begin = 0, end = 1)  +
+  geom_point(data = sites, aes(x = x, y = y), size = 3, color = "black", inherit.aes = FALSE)
+# geom_text(data = sites, aes(x = x, y = y, label = ID), inherit.aes = FALSE) + 
+# ggtitle(ls_labels[p])
+tmpplt
+ggsave(paste("NEWPartial","NumGen", ".png", sep = ""),
+       plot = tmpplt, device = "png", width = 6, height = 6, units = "in")
 
 
 
