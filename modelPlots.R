@@ -23,7 +23,7 @@ theme_set(theme_bw(base_size = 14))
 library(gridExtra)
 library(grid)
 # results directory
-newname <- "new_west_NCDL_25twil"
+newname <- "new_west_SCDL_25twil"
 
 source('CDL_funcs.R')
 region_param <- "WEST"
@@ -77,7 +77,7 @@ ls <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1])
 # maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,2])
 # sims <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,3])
 # sims <- gsub(pattern = ".grd", replacement = "", x = sims)
-ncores <- 7
+ncores <- length(ls)
 registerDoMC(cores = ncores)
 # this loop takes a lot of time
 
