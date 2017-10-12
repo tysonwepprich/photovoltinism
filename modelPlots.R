@@ -277,7 +277,7 @@ ggsave(paste(newname,"LifestageTS", ".png", sep = ""),
 
 ######
 # Plot all lifestages for a particular day
-newname <- "new_west_SCDL_25twil"
+newname <- "new_west_SCDL_100twil"
 # loop to grab all lifestage results on a certain day to plot together
 # save in one giant data.frame to use for plots
 returnwd <- getwd()
@@ -334,10 +334,10 @@ for (d in days){
 for (i in 1:length(days)){
   index <- (i*length(lifestages) - (length(lifestages) - 1)):(i*length(lifestages))
   plt <- grid.arrange(grobs = pltlist[index],
-                      ncol = 2,
+                      ncol = 3,
                       top = paste("DOY", days[i], sep = " "))
   ggsave(paste("NEWDOY", days [i], ".png", sep = ""),
-         plot = plt, device = "png", width = 12, height = 12, units = "in")
+         plot = plt, device = "png", width = 16, height = 9, units = "in")
 }
 
 

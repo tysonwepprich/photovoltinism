@@ -20,8 +20,24 @@ library(dplyr)
 library(mgcv)
 library(grid)
 library(fitdistrplus)
+library(stringr)
 
 theme_set(theme_bw(base_size = 14)) 
+
+TriDD=function(tmax, tmin, LDT, UDT){
+  Tmp1=6*((tmax-LDT)*(tmax-LDT))/(tmax-tmin)
+  Tmp2=6*((tmax-UDT)*(tmax-UDT))/(tmax-tmin)
+  Cond(tmax < LDT,0,
+       Cond(tmin >= UDT,UDT-LDT,
+            Cond((tmax < UDT) & (tmin <= LDT), Tmp1/12,
+                 Cond((tmin <= LDT) & (tmax >= UDT), (Tmp1-Tmp2)/12,
+                      Cond((tmin > LDT) & (tmax >= UDT), 6*(tmax+tmin-2*LDT)/12 - (Tmp2/12),
+                           Cond((tmin > LDT) & (tmax < UDT), 6*(tmax+tmin-2*LDT)/12,0))))))
+} 
+
+Cond=function(condition, trueValue, falseValue){
+  return(condition * trueValue + (!condition)*falseValue)
+}
 ```
 
 ##Field observations
@@ -353,4 +369,163 @@ plt_eg <- plt_egg +
 
 multiplot(plt_ad, plt_eg, cols = 1)
 ```
+
+Egg distribution does not look quite right, so could try a couple other things:
+- Use Blossey oviposition data to see distribution.
+- Simulate egg distribution from adult emergence, pre-oviposition period, and egg degree-days in stage.
+
+```{r blossey_adult_data}
+
+expdat <- read.csv("data/BlosseyFigureData.csv", header = TRUE)
+expdat <- expdat %>% 
+  mutate(DOY = 120 + round(as.numeric(str_split_fixed(string = DaysSinceApril30..Count, pattern = ", ", n = 2)[, 1])),
+         Value = round(as.numeric(str_split_fixed(string = DaysSinceApril30..Count, pattern = ", ", n = 2)[, 2]), 2)) %>% 
+  dplyr::select(-DaysSinceApril30..Count)
+
+# field adult emergence (with removal)
+tmin <- read.table(file = "data/Lensahn_tmin.txt", skip = 21, header = TRUE, sep = ",")
+tmin <- tmin %>% 
+  mutate(Site = "Gammendorf", 
+         Date = ymd(DATE),
+         Year = year(Date),
+         tmin = TN / 10)
+tmax <- read.table(file = "data/Lensahn_tmax.txt", skip = 21, header = TRUE, sep = ",")
+tmax <- tmax %>% 
+  mutate(Site = "Gammendorf", 
+         Date = ymd(DATE),
+         Year = year(Date),
+         tmax = TX / 10)
+fig6temp <- left_join(tmin, tmax, by = c("Site", "Date", "Year")) %>% 
+  dplyr::select(Site, Date, Year, tmin, tmax) %>% 
+  filter(Year %in% c(1988, 1990)) %>% 
+  mutate(DOY = yday(Date),
+         DD = TriDD(tmax, tmin, 10, 37.8)) %>% 
+  group_by(Year) %>% 
+  arrange(DOY) %>% 
+  mutate(AccumDD = cumsum(DD))
+
+fig6dat <- expdat %>% 
+  filter(Figure == 6) %>% 
+  left_join(fig6temp, by = c("Year", "Site", "DOY")) %>% 
+  mutate(Year = as.factor(as.character(Year)),
+         FakeCount = round(Value),
+         Value = Value / 10)
+fig6dat$Value[which(fig6dat$Value < 0)] <- 0
+
+fig6plt <- ggplot(fig6dat, aes(x = AccumDD, y = Value, color = Year)) +
+  geom_point()
+fig6plt
+
+# Blossey removed adults each visit
+# model this process? Or ignore?
+
+
+
+mod <- gam(FakeCount ~ s(AccumDD, k = 8), method = "REML",
+           family = poisson, data = fig6dat)
+
+xrange <- range(fig6dat$AccumDD)
+xseq <- seq(from=xrange[1], to=xrange[2], length=1000)
+preddat <- data.frame(AccumDD = xseq)
+preddat$FakeCount <- predict(mod, newdata = preddat, type = "response")
+# preddat$RelProp <- preddat$y / max(preddat$y, na.rm = TRUE)
+
+plt <- ggplot(fig6dat, aes(x = AccumDD, y = FakeCount)) + 
+  geom_point() +
+  geom_path(data = preddat) +
+  ggtitle("Blossey adults")
+  # facet_wrap(~Stage, ncol = 1) +
+  # theme_bw()
+plt
+  
+```
+
+
+```{r blossey_egg_data}
+
+tmin <- read.table(file = "data/tmin_hamburg.txt", skip = 21, header = TRUE, sep = ",")
+tmin <- tmin %>% 
+  mutate(Site = "Hamburg", 
+         Date = ymd(DATE),
+         Year = year(Date),
+         tmin = TN / 10)
+tmax <- read.table(file = "data/tmax_hamburg.txt", skip = 21, header = TRUE, sep = ",")
+tmax <- tmax %>% 
+  mutate(Site = "Hamburg", 
+         Date = ymd(DATE),
+         Year = year(Date),
+         tmax = TX / 10)
+fig8temp <- left_join(tmin, tmax, by = c("Site", "Date", "Year")) %>% 
+  dplyr::select(Site, Date, Year, tmin, tmax) %>% 
+  filter(Year == 1990) %>% 
+  mutate(DOY = yday(Date),
+         DD = TriDD(tmax, tmin, 10, 37.8)) %>% 
+  group_by(Year) %>% 
+  arrange(DOY) %>% 
+  mutate(AccumDD = cumsum(DD))
+
+fieldDDexposure <- fig8temp$AccumDD[fig8temp$DOY == 152]
+labDDexposure <- fig8temp$AccumDD[fig8temp$DOY == 102]
+
+lab <- expdat %>% 
+  filter(Figure == 8, Variable == "Temperature")
+
+labtemp <- as.data.frame(approx(lab$DOY, lab$Value, xout = c(min(lab$DOY):max(lab$DOY)), method = "linear")) %>% 
+  mutate(DD = ((y > 10) * (y - 10)),
+         labDD = cumsum(DD))
+  
+
+fig8dat <- expdat %>% 
+  filter(Figure == 8, Variable != "Temperature") %>% 
+  left_join(labtemp, by = c("DOY" = "x"))
+# ends of series missing DD data, add manually
+fig8dat$labDD[1] <- 0
+fig8dat$labDD[26:28] <- c(1406 + 28*2, 1406 + 28*9, 1406 + 28*16) #1406 at DOY 197
+fig8dat$AccumDD <- ifelse(test = fig8dat$Variable == "LabOvipRate",
+                          fig8dat$labDD + labDDexposure,
+                          fig8dat$labDD + fieldDDexposure)
+)
+
+
+fig8plt <- ggplot(fig8dat, aes(x = AccumDD, y = Value, color = Variable)) +
+  geom_point()
+fig8plt
+
+# Blossey removed adults each visit
+# model this process? Or ignore?
+
+
+
+mod <- gam(FakeCount ~ s(AccumDD, k = 8), method = "REML",
+           family = poisson, data = fig6dat)
+
+xrange <- range(fig6dat$AccumDD)
+xseq <- seq(from=xrange[1], to=xrange[2], length=1000)
+preddat <- data.frame(AccumDD = xseq)
+preddat$FakeCount <- predict(mod, newdata = preddat, type = "response")
+# preddat$RelProp <- preddat$y / max(preddat$y, na.rm = TRUE)
+
+plt <- ggplot(fig6dat, aes(x = AccumDD, y = FakeCount)) + 
+  geom_point() +
+  geom_path(data = preddat) +
+  ggtitle("Blossey adults")
+  # facet_wrap(~Stage, ncol = 1) +
+  # theme_bw()
+plt
+
+```
+
+Blossey data doesn't help much. Shape looks likes, but span of oviposition is way higher. Now attempt to simulate based on adult observations in Oregon.
+
+```{r oviposition_simulation}
+
+
+adultcount <- adultpred %>% 
+  filter(row_number() %% 15 == 0) %>% 
+  mutate(FakeCount = rpois(length(RelProp), lambda = 1000 * RelProp)) %>% 
+  filter(GDD < 270)
+
+
+```
+
 
