@@ -246,7 +246,7 @@ levels(tsdat$Lifestage) <- c("Overwinter", "Egg", "Larva", "Pupa", "Adult", "Dia
 tsdat$ID <- factor(tsdat$ID, c("JB Lewis-McCord", "Richland", "Corvallis", "Yuba City"))
 
 pltdat <- tsdat %>% 
-  filter(Lifestage %in% c("Egg", "Diapause"))
+  filter(Lifestage %in% c("Egg", "Adult", "Diapause"))
                           
 # plt <- ggplot(pltdat, aes(x = DOY, y = Proportion, group = Lifestage, color = Lifestage)) +
 #   geom_line(size = 2) +
@@ -258,12 +258,13 @@ pltdat <- tsdat %>%
 # multiply egg and diapause
 diap <- pltdat$Proportion[pltdat$Lifestage == "Diapause"]
 pltdat1 <- pltdat %>% 
-  filter(Lifestage == "Egg") %>% 
+  filter(Lifestage == "Adult") %>%
+  # filter(Lifestage %in% c("Egg", "Adult")) %>% 
   mutate(Proportion = Proportion * (1 - diap))
 pltdat2 <- pltdat %>% filter(Lifestage == "Diapause") 
 pltdat <- rbind(pltdat1, pltdat2)
 
-plt <- ggplot(pltdat, aes(x = DOY, y = Proportion, group = Lifestage, color = Lifestage)) +
+plt <- ggplot(pltdat, aes(x = Accum_GDD, y = Proportion, group = Lifestage, color = Lifestage)) +
   geom_line(size = 2) +
   facet_wrap(~ID, ncol = 1)
 plt
