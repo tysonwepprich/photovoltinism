@@ -484,7 +484,7 @@ fig8dat$labDD[26:28] <- c(1406 + 28*2, 1406 + 28*9, 1406 + 28*16) #1406 at DOY 1
 fig8dat$AccumDD <- ifelse(test = fig8dat$Variable == "LabOvipRate",
                           fig8dat$labDD + labDDexposure,
                           fig8dat$labDD + fieldDDexposure)
-)
+
 
 
 fig8plt <- ggplot(fig8dat, aes(x = AccumDD, y = Value, color = Variable)) +
@@ -518,14 +518,42 @@ plt
 Blossey data doesn't help much. Shape looks likes, but span of oviposition is way higher. Now attempt to simulate based on adult observations in Oregon.
 
 ```{r oviposition_simulation}
-
+preovipDD <- 50
 
 adultcount <- adultpred %>% 
   filter(row_number() %% 15 == 0) %>% 
   mutate(FakeCount = rpois(length(RelProp), lambda = 1000 * RelProp)) %>% 
-  filter(GDD < 270)
+  filter(GDD < 270) %>% 
+  mutate(EggStart = GDD + preovipDD,
+         EggEnd = EggStart + 93.3)
+
+eggFun <- function(EggStart, EggEnd, AdultCount){
+  span <- seq(EggStart, EggEnd, by = 5)
+  eggs <- rep(span, AdultCount)
+  return(eggs)
+}
+
+eggdist <- vector()
+for (i in 1:nrow(adultcount)){
+  eggdist <- c(eggdist, eggFun(adultcount[i, ]$EggStart,
+                               adultcount[i, ]$EggEnd,
+                               adultcount[i, ]$FakeCount))
+}
+
+  eggdist <- data.frame(eggs = eggdist, Site = "Sutherlin")
 
 
+plt_eg <- plt_egg +
+  geom_point(aes(x = 256.2, y = 1, color = "Coeburn"), shape = 17, size = 3) +
+  geom_point(aes(x = 108, y = 0, color = "Coeburn"), shape = 17, size = 3) +  
+  geom_point(aes(x = 404.4, y = 0, color = "Coeburn"), shape = 17, size = 3) +
+  scale_x_continuous(limit = c(0, 600)) +
+  geom_path(data = egg.df, aes(x = GDD, y = RelProp)) +
+  # theme(legend.position = "none") +
+  geom_density(data = eggdist, aes(x = eggs, y = ..scaled..)) +
+  ggtitle("F1 Eggs")
+plt_eg
+  
 ```
 
 
