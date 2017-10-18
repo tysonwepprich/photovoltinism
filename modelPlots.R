@@ -23,7 +23,7 @@ theme_set(theme_bw(base_size = 14))
 library(gridExtra)
 library(grid)
 # results directory
-newname <- "new_west_SCDL_100twil"
+newname <- "new_west_SCDL_25twil"
 
 source('CDL_funcs.R')
 region_param <- "WEST"
@@ -77,7 +77,7 @@ ls <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1])
 # maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,2])
 # sims <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,3])
 # sims <- gsub(pattern = ".grd", replacement = "", x = sims)
-ncores <- 7
+ncores <- length(ls)
 registerDoMC(cores = ncores)
 # this loop takes a lot of time
 
@@ -246,7 +246,7 @@ levels(tsdat$Lifestage) <- c("Overwinter", "Egg", "Larva", "Pupa", "Adult", "Dia
 tsdat$ID <- factor(tsdat$ID, c("JB Lewis-McCord", "Richland", "Corvallis", "Yuba City"))
 
 pltdat <- tsdat %>% 
-  filter(Lifestage %in% c("Egg", "Diapause"))
+  filter(Lifestage %in% c("Egg", "Adult", "Diapause"))
                           
 # plt <- ggplot(pltdat, aes(x = DOY, y = Proportion, group = Lifestage, color = Lifestage)) +
 #   geom_line(size = 2) +
@@ -258,12 +258,13 @@ pltdat <- tsdat %>%
 # multiply egg and diapause
 diap <- pltdat$Proportion[pltdat$Lifestage == "Diapause"]
 pltdat1 <- pltdat %>% 
-  filter(Lifestage == "Egg") %>% 
+  filter(Lifestage == "Adult") %>%
+  # filter(Lifestage %in% c("Egg", "Adult")) %>% 
   mutate(Proportion = Proportion * (1 - diap))
 pltdat2 <- pltdat %>% filter(Lifestage == "Diapause") 
 pltdat <- rbind(pltdat1, pltdat2)
 
-plt <- ggplot(pltdat, aes(x = DOY, y = Proportion, group = Lifestage, color = Lifestage)) +
+plt <- ggplot(pltdat, aes(x = Accum_GDD, y = Proportion, group = Lifestage, color = Lifestage)) +
   geom_line(size = 2) +
   facet_wrap(~ID, ncol = 1)
 plt
