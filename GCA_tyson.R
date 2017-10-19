@@ -15,6 +15,8 @@ library(sp)
 library(rgdal)
 library(raster)
 library(lubridate)
+library(mixsmsn)
+
 # for parallel simulations with control over seed for reproducibility
 # need different packages for windows computers
 library(doRNG)
@@ -63,7 +65,8 @@ adultLDT   <- 10
 adultUDT   <- 37.8
 # Degree day requirements for life stages
 # DD = degree days, number of cumulative heat units to complete that lifestage
-OWadultDD_mu  <- 167.6 #108 # text OW stage dev 39 DD "post diapause"
+OWadultDD_mu  <- 167.6 #based on Oregon counts
+  #or 108 based on McAvoy 1997 phenology of 3 years
 eggDD_mu = 93.3
 larvaeDD_mu = 136.4 # 46.9 + 45.8 + 43.7 instars
 pupDD_mu = 137.7 
@@ -94,13 +97,27 @@ nday <- length(start_doy:end_doy)
 
 # Take empirical distribution and calculate substages
 # OW oviposition distribution
-eggdist <- dbeta(x = seq(0, 1, length.out = 1000), 
-                 shape1 = 3.888677, shape2 = 2.174208)
-inputdist <- data.frame(x = seq(59.6, 223.3677, length.out = 1000),
-                        y = eggdist)
-inputdist$CDF <- cumsum(inputdist$y) / sum(inputdist$y, na.rm = TRUE)
+# # TRY 1 with beta
+# eggdist <- dbeta(x = seq(0, 1, length.out = 1000), 
+#                  shape1 = 3.888677, shape2 = 2.174208)
+# inputdist <- data.frame(x = seq(59.6, 223.3677, length.out = 1000),
+#                         y = eggdist)
+# inputdist$CDF <- cumsum(inputdist$y) / sum(inputdist$y, na.rm = TRUE)
+# 
+# substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
 
-substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
+# Try 2 with skewed t
+arg1 = list(mu = 97.94, sigma2 = 2241.7, shape = 3.92, nu = 9.57)
+x = seq(50, 350, length.out = 1000)
+y = mixsmsn:::dt.ls(x, loc = arg1$mu, sigma2 = arg1$sigma2, shape = arg1$shape, nu = arg1$nu)
+inputdist <- data.frame(x = x, y = y) %>% 
+  arrange(x) %>% 
+  mutate(CDF = cumsum(y/sum(y)))
+substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
+# To get observations to fit for overwinter adults and F1 eggs, 
+# overwinter pre-oviposition period is only 50 deg days
+substages$means <- substages$means + 50
+
 
 # try to run sims in parallel and also split map if large REGION
 if (region_param == "CONUS"){
@@ -341,7 +358,7 @@ system.time({
                 # photoperiod for this day across raster
                 if (model_CDL == 1){
                   doy <- lubridate::yday(lubridate::ymd(d))
-                  photo <- RasterPhoto(template, doy, perc_twilight = 100)
+                  photo <- RasterPhoto(template, doy, perc_twilight = 25)
                 }
                 
                 #### Loop through Stages; order of stages now read from SPP param file ####
@@ -495,7 +512,8 @@ system.time({
                       dd3tmp <- tmpGDD[[names(tmpGDD)[index]]]
                     }
                     
-                    if (i == "OA") { dd3 <- dd3tmp * LSOW3 
+                    if (i == "OA") { 
+                      dd3 <- dd3tmp * LSOW3 
                     } else if (i == "A") { 
                       dd3 <- dd3tmp * LS3 
                     }
