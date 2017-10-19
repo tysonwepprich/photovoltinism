@@ -17,6 +17,7 @@ library(rgdal)
 library(raster)
 library(lubridate)
 library(mixsmsn)
+library(dplyr)
 
 # for parallel simulations with control over seed for reproducibility
 # need different packages for windows computers
@@ -42,7 +43,7 @@ prism_path <- "/data/PRISM/2014"
 # model extext
 start_doy  <- 1
 end_doy    <- 365
-region_param <- "WEST"
+region_param <- "CONUS"
 # life cycle parameters
 stgorder   <- c("OA","E","L","P","A","F")
 photo_sens <- 3 #c(-1, 3) # integer life stages for now
@@ -52,8 +53,8 @@ CDL_log    <- 1 # if 1, model CDL from logistic regression results
 owstage    <- "OA"
 # Logistic regression photoperiod
 # from Fritzi's lab data, two different populations
-# coefs <- c(-56.9745, 3.5101) # Northern
-coefs <- c(-60.3523, 3.8888) # Southern
+coefs <- c(-56.9745, 3.5101) # Northern
+# coefs <- c(-60.3523, 3.8888) # Southern
 # Degree day thresholds
 # LDT = lower development threshold, temp at which growth = 0 (using PRISM tmean)
 eggLDT     <- 10
