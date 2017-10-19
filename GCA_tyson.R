@@ -7,6 +7,7 @@
 # -Pest Event Maps
 # -Diapause stage leading to overwintering stage (using same raster?)
 # -Parallel amended for windows OS as well
+# -Frost events at start/end of season. Track annual variation in season length.
 
 #####
 # packages, options, functions loaded
