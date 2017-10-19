@@ -484,7 +484,7 @@ fig8dat$labDD[26:28] <- c(1406 + 28*2, 1406 + 28*9, 1406 + 28*16) #1406 at DOY 1
 fig8dat$AccumDD <- ifelse(test = fig8dat$Variable == "LabOvipRate",
                           fig8dat$labDD + labDDexposure,
                           fig8dat$labDD + fieldDDexposure)
-)
+
 
 
 fig8plt <- ggplot(fig8dat, aes(x = AccumDD, y = Value, color = Variable)) +
@@ -518,13 +518,179 @@ plt
 Blossey data doesn't help much. Shape looks likes, but span of oviposition is way higher. Now attempt to simulate based on adult observations in Oregon.
 
 ```{r oviposition_simulation}
-
+preovipDD <- 50
 
 adultcount <- adultpred %>% 
   filter(row_number() %% 15 == 0) %>% 
   mutate(FakeCount = rpois(length(RelProp), lambda = 1000 * RelProp)) %>% 
-  filter(GDD < 270)
+  filter(GDD < 270) %>% 
+  mutate(EggStart = GDD + preovipDD,
+         EggEnd = EggStart + 93.3)
 
+eggFun <- function(EggStart, EggEnd, AdultCount){
+  span <- seq(EggStart, EggEnd, by = 5)
+  eggs <- rep(span, AdultCount)
+  return(eggs)
+}
+
+eggdist <- vector()
+for (i in 1:nrow(adultcount)){
+  eggdist <- c(eggdist, eggFun(adultcount[i, ]$EggStart,
+                               adultcount[i, ]$EggEnd,
+                               adultcount[i, ]$FakeCount))
+}
+
+  eggdist <- data.frame(eggs = eggdist, Site = "Sutherlin")
+
+
+plt_eg <- plt_egg +
+  geom_point(aes(x = 256.2, y = 1, color = "Coeburn"), shape = 17, size = 3) +
+  geom_point(aes(x = 108, y = 0, color = "Coeburn"), shape = 17, size = 3) +  
+  geom_point(aes(x = 404.4, y = 0, color = "Coeburn"), shape = 17, size = 3) +
+  scale_x_continuous(limit = c(0, 600)) +
+  # geom_path(data = egg.df, aes(x = GDD, y = RelProp)) +
+  # theme(legend.position = "none") +
+  geom_density(data = eggdist, aes(x = eggs, y = ..scaled..)) +
+  ggtitle("F1 Eggs")
+plt_eg
+  
+inputdist <- adultpred %>% 
+  filter(GDD <= 270) %>% 
+  mutate(CDF = cumsum(y/sum(y)),
+         x = GDD)
+
+# inputdist <- data.frame(x = seq(59.6, 223.3677, length.out = 1000),
+#                         y = eggdist)
+# inputdist$CDF <- cumsum(inputdist$y) / sum(inputdist$y, na.rm = TRUE)
+
+substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
+
+```
+
+What about Coeburn data (although few observations each year)?
+Adult observations are at tail end of curve, probably shouldn't use. Egg peak is actually pretty close to Oregon data for egg counts.
+
+```{r coeburn phenology}
+obs <- read.csv("data/CoeburnObs.csv", header = TRUE) %>% 
+  mutate(Date = mdy(Date)) %>% 
+  group_by(year(Date), Stage) %>% 
+  mutate(RelProp = MeanCount/max(MeanCount))
+
+
+temp <- read.csv("data/CoeburnTemp.csv", header = TRUE) %>% 
+  mutate(Date = ymd(DATE),
+         DD = TriDD(tmax = TMAX, tmin = TMIN, LDT = 10, UDT = 37.8)) %>% 
+  group_by(year(Date)) %>% 
+  arrange(yday(Date)) %>% 
+  mutate(AccumDD = cumsum(DD))
+
+# ddplt <- ggplot(temp, aes(x = yday(Date), y = AccumDD, group = year(Date))) +
+#   geom_point()
+# ddplt
+
+ad_obs <- obs %>% 
+  left_join(temp) %>% 
+  filter(Stage == "adult") %>% 
+  mutate(GDD = AccumDD)
+
+eg_obs <- obs %>% 
+  left_join(temp) %>% 
+  filter(Stage == "egg") %>% 
+  mutate(GDD = AccumDD)
+
+plt <- plt_adult +
+  geom_point(data = ad_obs)
+plt
+
+plte <- plt_egg +
+  geom_point(data = eg_obs)
+plte
+
+```
+
+
+```{r adult distribution}
+adultcut <- adultpred %>% filter(GDD <= 270)
+gdd_obs <- rep(adultcut$GDD, times = adultcut$y)
+# for beta distribution, constrain to limits
+# zgdd_obs <- (gdd_obs - min(gdd_obs)) / (max(gdd_obs) - min(gdd_obs))
+
+# for skew fitting, resample to lower computation
+gdd_obs <- sample(x = gdd_obs, size = 5000, replace = TRUE)
+
+descdist(zgdd_obs, discrete = FALSE)
+fit.beta <- fitdist(zgdd_obs, "beta", method = "mme")
+
+
+addist <- dbeta(x = seq(0,1, length.out = length(gdd_obs)), 
+                 shape1 = fit.beta$estimate[1], shape2 = fit.beta$estimate[2])
+addist <- (addist / max(addist))
+ad.df <- data.frame(GDD = seq(min(adultcut$GDD), 
+                               max(adultcut$GDD), 
+                               length.out = length(gdd_obs)), 
+                     RelProp = addist, Site = "Beta")
+
+
+library(mixsmsn)
+mod_skt <- smsn.mix(gdd_obs, nu = 5, g = 1, get.init = TRUE, family = "Skew.t", calc.im = TRUE, kmeans.param = list(n.start = 5))
+
+mod_skn <- smsn.mix(gdd_obs, nu = 5, g = 1, get.init = TRUE, family = "Skew.normal", calc.im = TRUE, kmeans.param = list(n.start = 5))
+
+arg1 = list(mu = 97.94, sigma2 = 2241.7, shape = 3.92, nu = 9.57)
+mix.dens(gdd_obs, mod_skt)
+x = seq(min(gdd_obs), max(gdd_obs), length.out = 1000)
+x = seq(50, 350, length.out = 1000)
+
+y = mixsmsn:::dt.ls(x, loc = arg1$mu, sigma2 = arg1$sigma2, shape = arg1$shape, nu = arg1$nu)
+newdist <- data.frame(x = x, y = y) %>% 
+  arrange(x) %>% 
+  mutate(CDF = cumsum(y/sum(y)))
+test <- SubstageDistrib(newdist, numstage = 7, perc = .99)
+
+```
+
+Skewed t or skewed normal to fit adult observations. Simulate accumulating egg counts from this adult distribution to figure out best pre-oviposition period
+
+```{r}
+preovipDD <- 50
+
+adultcount <- newdist %>% 
+  dplyr::filter(row_number() %% 5 == 0) %>%
+  mutate(RelProp = y / max(y),
+         FakeCount = rpois(length(RelProp), lambda = 100 * RelProp),
+         GDD = x) %>% 
+  # dplyr::filter(GDD <= 270) %>% 
+  mutate(EggStart = GDD + preovipDD,
+         EggEnd = EggStart + 93.3)
+
+eggFun <- function(EggStart, EggEnd, AdultCount){
+  span <- seq(EggStart, EggEnd, by = 5)
+  eggs <- rep(span, AdultCount)
+  return(eggs)
+}
+
+eggdist <- vector()
+for (i in 1:nrow(adultcount)){
+  eggdist <- c(eggdist, eggFun(adultcount[i, ]$EggStart,
+                               adultcount[i, ]$EggEnd,
+                               adultcount[i, ]$FakeCount))
+}
+
+  eggdist <- data.frame(eggs = eggdist, Site = "Sutherlin")
+
+
+plt_eg <- plt_egg +
+  geom_point(aes(x = 256.2, y = 1, color = "Coeburn"), shape = 17, size = 3) +
+  geom_point(aes(x = 108, y = 0, color = "Coeburn"), shape = 17, size = 3) +  
+  geom_point(aes(x = 404.4, y = 0, color = "Coeburn"), shape = 17, size = 3) +
+  scale_x_continuous(limit = c(0, 600)) +
+  # geom_path(data = egg.df, aes(x = GDD, y = RelProp)) +
+  # theme(legend.position = "none") +
+  geom_density(data = eggdist, aes(x = eggs, y = ..scaled..), color = "red") +
+  geom_line(data = adultcount, aes(x = GDD, y = RelProp), color = "green") +
+  ggtitle("F1 Eggs")
+plt_eg
+  
 
 ```
 
