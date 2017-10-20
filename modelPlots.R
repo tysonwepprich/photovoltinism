@@ -141,6 +141,7 @@ system.time({
 })
 
 stopCluster(cl) #WINDOWS
+setwd(returnwd)
 
 
 # mosaic maps together if CONUS
@@ -177,8 +178,8 @@ res <- brick(paste(newname, "/", "LS2_001_sim1.grd", sep = ""))
 res <- brick(paste(newname, "/", "NumGen_001_sim7.grd", sep = ""))
 NAvalue(res) <- 200
 
-res <- brick(paste(newname, "/", "LS4_weighted.grd", sep = ""))
-res <- brick(paste(newname, "/", "NumGen_weighted.grd", sep = ""))
+res <- brick(paste(newname, "/", "LS4_001_weighted.grd", sep = ""))
+res <- brick(paste(newname, "/", "NumGen_001_weighted.grd", sep = ""))
 
 # res <- crop(res, extent(-125.1,-103.8,40.6,49.2)) #NORTHWEST
 # res <- crop(res, extent(-124.7294, -116.2949, 41.7150, 46.4612)) #OREGON
