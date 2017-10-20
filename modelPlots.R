@@ -345,14 +345,14 @@ for (i in rasfiles){
   outdf$Lifestage <- ls
   tmp[[length(tmp) + 1]] <- outdf
 }
-tsdat <- bind_rows(tmp) %>% 
-  filter(Lifestage != "NumGen")
+tsdat <- bind_rows(tmp) #%>% 
+  #filter(Lifestage != "NumGen")
 
 setwd(returnwd)
 
 
-tsdat$Lifestage <- factor(tsdat$Lifestage, c("LSOW", "LS0", "LS1", "LS2", "LS3", "LS4"))
-levels(tsdat$Lifestage) <- c("Overwinter", "Egg", "Larva", "Pupa", "Adult", "Diapause")
+tsdat$Lifestage <- factor(tsdat$Lifestage, c("LSOW", "LS0", "LS1", "LS2", "LS3", "LS4", "NumGen"))
+levels(tsdat$Lifestage) <- c("Overwinter", "Egg", "Larva", "Pupa", "Adult", "Diapause", "Voltinism")
 # tsdat$ID <- factor(tsdat$ID, c("JB Lewis-McCord", "Richland", "Corvallis", "Yuba City"))
 
 pltdat <- tsdat # %>% 
@@ -368,14 +368,18 @@ pltdat <- tsdat # %>%
 # multiply egg and diapause
 diap <- pltdat$Proportion[pltdat$Lifestage == "Diapause"]
 pltdat1 <- pltdat %>% 
-  filter(Lifestage != "Diapause") %>% 
+  filter(Lifestage %!in% c("Voltinism", "Diapause")) %>% 
   group_by(Lifestage) %>% 
-  mutate(Proportion = Proportion * (1 - diap))
-pltdat2 <- tsdat %>% filter(Lifestage == "Diapause") 
+  mutate(Proportion = Proportion * (1 - diap),
+         Cumul = cumsum(Proportion)) # not sure how to do this: get voltinism from adult
+pltdat2 <- tsdat %>% filter(Lifestage == "Diapause")
+# pltdat3 <- tsdat %>% 
+#   filter(Lifestage == "Voltinism") %>% 
+#   mutate(Proportion = )
 pltdat <- bind_rows(pltdat1, pltdat2) %>% 
-  filter(Lifestage %in% c("Diapause", "Egg"))
+  filter(Lifestage %in% c("Egg", "Adult"))
 
-plt <- ggplot(pltdat, aes(x = Accum_GDD, y = Proportion, group = Lifestage, color = Lifestage)) +
+plt <- ggplot(pltdat, aes(x = Accum_GDD, y = Cumul, group = Lifestage, color = Lifestage)) +
   geom_line(size = 2) +
   facet_geo(~ID, grid = mygrid) 
   # coord_cartesian(xlim = c(75, 300)) 
@@ -457,10 +461,33 @@ for (i in 1:length(days)){
 
 
 # plot just NumGen
+days <- 365
+rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
+rasfiles <- rasfiles[grep(pattern = "all", x = rasfiles, fixed = TRUE)]
+rasfiles <- rasfiles[grep(pattern = "NumGen", x = rasfiles, fixed = TRUE)]
+
+dflist <- list()
+for (i in rasfiles){
+  res <- brick(i)
+  # fix NA problem, just assigned as zero
+  res <- res + template # template is all zeros and NA
+  ls <- unique(stringr::str_split_fixed(i, pattern = "_", 2)[,1])
+  for (j in days){
+    df <- as.data.frame(res[[j]], xy=TRUE)
+    names(df)[3] <- "Percent_of_simulations"
+    df$doy <- j
+    df$lifestage <- ls
+    dflist[[length(dflist)+1]] <- df
+  }
+}
+resdf <- dplyr::bind_rows(dflist)
+names(resdf)[3] <- "Present"
+setwd(returnwd)
+
 
 pltdf <- resdf %>% 
   filter(lifestage == "NumGen", 
-         doy == 350) %>% 
+         doy == 365) %>% 
   mutate(Voltinism = Present)
 tmpplt <- ggplot(data = pltdf, aes(x, y, fill = Voltinism)) +
   geom_raster() +
