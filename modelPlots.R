@@ -6,13 +6,14 @@ library(raster)
 
 rasterOptions(overwrite = FALSE, 
               chunksize = 1e+07,
-              maxmemory = 1e+08)
+              maxmemory = 1e+08,
+              tmpdir = "~/REPO/photovoltinism/rastertmp/")
 
 # for parallel simulations with control over seed for reproducibility
 library(doRNG)
 library(foreach) # for parallelized loops
-library(doMC) 
-library(doSNOW)
+library(doMC) # for LINUX
+# library(doSNOW) # for WINDOWS
 
 
 library(ggplot2)
@@ -25,7 +26,7 @@ theme_set(theme_bw(base_size = 14))
 library(gridExtra)
 library(grid)
 # results directory
-newname <- "GCA_CONUS_NorthCDL"
+newname <- "GCA_CONUS_SouthCDL"
 
 source('CDL_funcs.R')
 region_param <- "CONUS"
@@ -36,7 +37,7 @@ REGION <- switch(region_param,
                  "NORTHWEST"    = extent(-125.1,-103.8,40.6,49.2),
                  "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612),
                  "TEST"         = extent(-124, -122.5, 44, 45),
-                 "WEST"         = extent(-125.14, -109, 37, 49.   1))
+                 "WEST"         = extent(-125.14, -109, 37, 49.1))
 
 states <- map_data("state", xlim = c(REGION@xmin, REGION@xmax),
                    ylim = c(REGION@ymin, REGION@ymax), lforce = "e")
@@ -49,9 +50,23 @@ template[!is.na(template)] <- 0
 template <- crop(template, REGION)
 
 # coordinates as examples
-sites <- data.frame(ID = c("Corvallis", "Richland", "JB Lewis-McCord", "Yuba City"),
-                    x = c(-123.263, -119.283, -122.53, -121.615),
-                    y = c(44.564, 46.275, 47.112, 39.14))
+sites <- data.frame(ID = c("Corvallis, OR", "Richland, WA", "JB Lewis-McCord, WA", "Palermo, CA", 
+                           "Ephrata, WA", "Yakima Training Center, WA", "Camp Rilea, OR",
+                           "Ft Drum, NY", "West Point, NY", "Kellogg LTER, MI",
+                           "The Wilds, OH", "Duluth, MN", "Coeburn, VA", "Mountain Home AFB, ID",
+                           "Quantico MCB, VA", "Hanscom AFB, MA", "Ft Bragg, NC",
+                           "Ogden, UT", "Buckley AFB, CO"),
+                    x = c(-123.263, -119.283, -122.53, -121.625360, -119.555424, -120.461073,
+                          -123.934759, -75.763566, -73.962210, -85.402260, -81.733314,
+                          -92.158597, -82.466417, -115.865101, -77.311254, -71.276231,
+                          -79.083248, -112.052908, -104.752266),
+                    y = c(44.564, 46.275, 47.112, 39.426829, 47.318546, 46.680138, 
+                          46.122867, 44.055684, 41.388456, 42.404749, 39.829447,
+                          46.728247, 36.943103, 43.044083, 38.513995, 42.457068,
+                          35.173401, 41.252509, 39.704018))
+
+
+
 
 nsim <- 7
 # # Take empirical distribution and calculate substages
@@ -94,12 +109,12 @@ maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,2])
 # sims <- gsub(pattern = ".grd", replacement = "", x = sims)
 # parallel backend
 # LINUX
-# ncores <- length(ls) * length(maps) / 2
-# registerDoMC(cores = ncores) 
-# WINDOWS
-ncores <- 4
-cl <- makeCluster(ncores) 
-registerDoSNOW(cl)
+ncores <- length(ls) * length(maps) / 2
+registerDoMC(cores = ncores)
+# # WINDOWS
+# ncores <- 4
+# cl <- makeCluster(ncores) 
+# registerDoSNOW(cl)
 
 # run inside foreach now
 # tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", "run", newname)
@@ -137,11 +152,17 @@ system.time({
               outras <- writeRaster(blank, filename = paste(i, m, "weighted", sep = "_"),
                                     overwrite = TRUE)
               removeTmpFiles(h = 0)
+              unlink(tmppath, recursive = TRUE)
+              
             }
 })
 
-stopCluster(cl) #WINDOWS
+# stopCluster(cl) #WINDOWS
 
+# # remove non-weighted results to save disk space
+# cleanup <- list.files()
+# cleanup <- cleanup[-grep("weighted", x = cleanup)]
+# lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
 
 # mosaic maps together if CONUS
 # maybe hold off on this since its files so large
@@ -280,13 +301,26 @@ ggsave(paste("NEW","CDL", ".png", sep = ""),
 
 
 ######
+mygrid <- data.frame(
+  code = c("JBLM", "DRUM", "EPHR", "BOIS", "DULU", "MASS", "WSPT", "YAKI", "RILE",
+           "UTAH", "KBST", "COEB", "WILD", "CORV", "DENV", "QUAN", "PLMO", "BRAG"),
+  name = c("JB Lewis-McCord, WA", "Ft Drum, NY", "Ephrata, WA", "Mountain Home AFB, ID",
+           "Duluth, MN", "Hanscom AFB, MA", "West Point, NY", "Yakima Training Center, WA",
+           "Camp Rilea, OR", "Ogden, UT", "Kellogg LTER, MI", "Coeburn, VA", "The Wilds, OH",
+           "Corvallis, OR", "Buckley AFB, CO", "Quantico MCB, VA", "Palermo, CA", "Ft Bragg, NC"),
+  row = c(1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3),
+  col = c(1, 5, 2, 3, 4, 6, 6, 2, 1, 3, 4, 5, 4, 1, 3, 6, 2, 5),
+  stringsAsFactors = FALSE
+)
+geofacet::grid_preview(mygrid)
+
 # plot time series of each stage
 returnwd <- getwd()
 setwd(newname)
 
 f <-list.files()
 rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
-rasfiles <- rasfiles[grep(pattern = "weighted", x = rasfiles, fixed = TRUE)]
+# rasfiles <- rasfiles[grep(pattern = "weighted", x = rasfiles, fixed = TRUE)]
 
 tmp <- list()
 for (i in rasfiles){
@@ -319,10 +353,10 @@ setwd(returnwd)
 
 tsdat$Lifestage <- factor(tsdat$Lifestage, c("LSOW", "LS0", "LS1", "LS2", "LS3", "LS4"))
 levels(tsdat$Lifestage) <- c("Overwinter", "Egg", "Larva", "Pupa", "Adult", "Diapause")
-tsdat$ID <- factor(tsdat$ID, c("JB Lewis-McCord", "Richland", "Corvallis", "Yuba City"))
+# tsdat$ID <- factor(tsdat$ID, c("JB Lewis-McCord", "Richland", "Corvallis", "Yuba City"))
 
-pltdat <- tsdat %>% 
-  filter(Lifestage %in% c("Egg", "Diapause"))
+pltdat <- tsdat # %>% 
+#   filter(Lifestage %in% c("Egg", "Diapause"))
                           
 # plt <- ggplot(pltdat, aes(x = DOY, y = Proportion, group = Lifestage, color = Lifestage)) +
 #   geom_line(size = 2) +
@@ -334,17 +368,22 @@ pltdat <- tsdat %>%
 # multiply egg and diapause
 diap <- pltdat$Proportion[pltdat$Lifestage == "Diapause"]
 pltdat1 <- pltdat %>% 
-  filter(Lifestage == "Egg") %>% 
+  filter(Lifestage != "Diapause") %>% 
+  group_by(Lifestage) %>% 
   mutate(Proportion = Proportion * (1 - diap))
-pltdat2 <- pltdat %>% filter(Lifestage == "Diapause") 
-pltdat <- rbind(pltdat1, pltdat2)
+pltdat2 <- tsdat %>% filter(Lifestage == "Diapause") 
+pltdat <- bind_rows(pltdat1, pltdat2) %>% 
+  filter(Lifestage %in% c("Diapause", "Egg"))
 
-plt <- ggplot(pltdat, aes(x = DOY, y = Proportion, group = Lifestage, color = Lifestage)) +
+plt <- ggplot(pltdat, aes(x = Accum_GDD, y = Proportion, group = Lifestage, color = Lifestage)) +
   geom_line(size = 2) +
-  facet_wrap(~ID, ncol = 1)
+  facet_geo(~ID, grid = mygrid) 
+  # coord_cartesian(xlim = c(75, 300)) 
+  # facet_wrap(~ID, ncol = 1)
 plt
+
 ggsave(paste(newname,"LifestageTS", ".png", sep = ""),
-       plot = plt, device = "png", width = 8, height = 6, units = "in")
+       plot = plt, device = "png", width = 12, height = 8, units = "in")
 
 
 
