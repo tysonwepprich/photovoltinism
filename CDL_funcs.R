@@ -1,3 +1,7 @@
+
+'%!in%' <- function(x,y)!('%in%'(x,y))
+
+
 ########                       BEGINNING function definitions                      #########
 #### if then else raster function [sim. to GRASS r.mapcalc if(x,a,b)]:
 Cond=function(condition, trueValue, falseValue){
