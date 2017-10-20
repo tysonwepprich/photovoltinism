@@ -23,10 +23,10 @@ theme_set(theme_bw(base_size = 14))
 library(gridExtra)
 library(grid)
 # results directory
-newname <- "new_west_SCDL_25twil"
+newname <- "GCA_CONUS_NorthCDL"
 
 source('CDL_funcs.R')
-region_param <- "WEST"
+region_param <- "CONUS"
 gdd_file <- "meanGDD_07_13.grd"
 
 REGION <- switch(region_param,
@@ -51,16 +51,29 @@ sites <- data.frame(ID = c("Corvallis", "Richland", "JB Lewis-McCord", "Yuba Cit
                     x = c(-123.263, -119.283, -122.53, -121.615),
                     y = c(44.564, 46.275, 47.112, 39.14))
 
-# Take empirical distribution and calculate substages
-# OW oviposition distribution
-eggdist <- dbeta(x = seq(0, 1, length.out = 1000), 
-                 shape1 = 3.888677, shape2 = 2.174208)
-inputdist <- data.frame(x = seq(59.6, 223.3677, length.out = 1000),
-                        y = eggdist)
-inputdist$CDF <- cumsum(inputdist$y) / sum(inputdist$y, na.rm = TRUE)
-
 nsim <- 7
-substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
+# # Take empirical distribution and calculate substages
+# # OW oviposition distribution
+# eggdist <- dbeta(x = seq(0, 1, length.out = 1000), 
+#                  shape1 = 3.888677, shape2 = 2.174208)
+# inputdist <- data.frame(x = seq(59.6, 223.3677, length.out = 1000),
+#                         y = eggdist)
+# inputdist$CDF <- cumsum(inputdist$y) / sum(inputdist$y, na.rm = TRUE)
+# 
+# substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
+
+
+# Try 2 with skewed t
+arg1 = list(mu = 97.94, sigma2 = 2241.7, shape = 3.92, nu = 9.57)
+x = seq(50, 350, length.out = 1000)
+y = mixsmsn:::dt.ls(x, loc = arg1$mu, sigma2 = arg1$sigma2, shape = arg1$shape, nu = arg1$nu)
+inputdist <- data.frame(x = x, y = y) %>% 
+  arrange(x) %>% 
+  mutate(CDF = cumsum(y/sum(y)))
+substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
+# To get observations to fit for overwinter adults and F1 eggs, 
+# overwinter pre-oviposition period is only 50 deg days
+substages$means <- substages$means + 50
 
 
 ####################################
@@ -74,24 +87,68 @@ rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
 
 # for each sim with unique information to save
 ls <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1])
-# maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,2])
+maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,2])
 # sims <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,3])
 # sims <- gsub(pattern = ".grd", replacement = "", x = sims)
-ncores <- length(ls)
+ncores <- length(ls) * length(maps) / 2
 registerDoMC(cores = ncores)
+
+tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", "run", newname)
+dir.create(path = tmppath, showWarnings = FALSE)
+#sets temp directory
+rasterOptions(tmpdir=file.path(tmppath)) 
 # this loop takes a lot of time
 
-foreach(i = ls, .packages = "raster") %dopar% {
-  fs <- sort(rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)])
-  ll <- replicate(nlayers(brick(fs[1])), template)
-  blank <- brick(ll)
-  for (j in 1:length(fs)){
-    ras_weighted <- brick(fs[j]) * substages[j, 2] # weights for each substage size
-    blank <- overlay(blank, ras_weighted, fun=function(x,y) x + y)
-  }
-  outras <- writeRaster(blank, filename = paste(i, "weighted", sep = "_"),
-                        overwrite = TRUE)
-}
+system.time({
+  foreach(i = ls,
+                      .packages= "raster",
+                      .export = c("rasfiles", "substages")) %:% 
+    foreach(m = maps,
+            .packages = "raster",
+            .export = c("rasfiles", "substages")) %dopar%{
+              # .inorder = FALSE) %do%{
+              # foreach(i = ls, .packages = "raster") %dopar% {
+              rasterOptions(tmpdir=file.path(tmppath)) 
+              
+              fs <- sort(rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)])
+              fs <- sort(fs[grep(pattern = m, x = fs, fixed = TRUE)])
+              ll <- replicate(nlayers(brick(fs[1])), brick(fs[1])[[1]])
+              blank <- brick(ll)
+              for (j in 1:length(fs)){
+                ras_weighted <- brick(fs[j]) * substages[j, 2] # weights for each substage size
+                blank <- overlay(blank, ras_weighted, fun=function(x,y) x + y)
+              }
+              outras <- writeRaster(blank, filename = paste(i, m, "weighted", sep = "_"),
+                                    overwrite = TRUE)
+              removeTmpFiles(h = 0)
+            }
+})
+
+# mosaic maps together if CONUS
+# maybe hold off on this since its files so large
+ncores <- length(ls)
+registerDoMC(cores = ncores)
+f <-list.files()
+rasfiles <- f[grep(pattern = "weighted", x = f, fixed = TRUE)]
+system.time({
+  foreach(i = ls,
+         .packages = "raster") %dopar%{
+           fs <- rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)]
+           
+           bricklist <- list()
+           for (m in 1:length(fs)){
+             bricklist[[m]] <- brick(fs[m])
+           }
+           
+           bricklist$filename <- paste(i, "all", sep = "_")
+           bricklist$overwrite <- TRUE
+           test <- do.call(merge, bricklist)
+         }
+  
+  cleanup <- list.files()
+  cleanup <- cleanup[-grep("all", x = cleanup)]
+  lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
+})
 
 setwd(returnwd)
 #####################
@@ -246,7 +303,7 @@ levels(tsdat$Lifestage) <- c("Overwinter", "Egg", "Larva", "Pupa", "Adult", "Dia
 tsdat$ID <- factor(tsdat$ID, c("JB Lewis-McCord", "Richland", "Corvallis", "Yuba City"))
 
 pltdat <- tsdat %>% 
-  filter(Lifestage %in% c("Egg", "Adult", "Diapause"))
+  filter(Lifestage %in% c("Egg", "Diapause"))
                           
 # plt <- ggplot(pltdat, aes(x = DOY, y = Proportion, group = Lifestage, color = Lifestage)) +
 #   geom_line(size = 2) +
@@ -258,13 +315,12 @@ pltdat <- tsdat %>%
 # multiply egg and diapause
 diap <- pltdat$Proportion[pltdat$Lifestage == "Diapause"]
 pltdat1 <- pltdat %>% 
-  filter(Lifestage == "Adult") %>%
-  # filter(Lifestage %in% c("Egg", "Adult")) %>% 
+  filter(Lifestage == "Egg") %>% 
   mutate(Proportion = Proportion * (1 - diap))
 pltdat2 <- pltdat %>% filter(Lifestage == "Diapause") 
 pltdat <- rbind(pltdat1, pltdat2)
 
-plt <- ggplot(pltdat, aes(x = Accum_GDD, y = Proportion, group = Lifestage, color = Lifestage)) +
+plt <- ggplot(pltdat, aes(x = DOY, y = Proportion, group = Lifestage, color = Lifestage)) +
   geom_line(size = 2) +
   facet_wrap(~ID, ncol = 1)
 plt
