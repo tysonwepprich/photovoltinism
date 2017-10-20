@@ -12,6 +12,8 @@ rasterOptions(overwrite = FALSE,
 library(doRNG)
 library(foreach) # for parallelized loops
 library(doMC) 
+library(doSNOW)
+
 
 library(ggplot2)
 library(viridis)
@@ -34,7 +36,7 @@ REGION <- switch(region_param,
                  "NORTHWEST"    = extent(-125.1,-103.8,40.6,49.2),
                  "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612),
                  "TEST"         = extent(-124, -122.5, 44, 45),
-                 "WEST"         = extent(-125.14, -109, 37, 49.1))
+                 "WEST"         = extent(-125.14, -109, 37, 49.   1))
 
 states <- map_data("state", xlim = c(REGION@xmin, REGION@xmax),
                    ylim = c(REGION@ymin, REGION@ymax), lforce = "e")
@@ -90,13 +92,21 @@ ls <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1])
 maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,2])
 # sims <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,3])
 # sims <- gsub(pattern = ".grd", replacement = "", x = sims)
-ncores <- length(ls) * length(maps) / 2
-registerDoMC(cores = ncores)
+# parallel backend
+# LINUX
+# ncores <- length(ls) * length(maps) / 2
+# registerDoMC(cores = ncores) 
+# WINDOWS
+ncores <- 4
+cl <- makeCluster(ncores) 
+registerDoSNOW(cl)
 
-tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", "run", newname)
-dir.create(path = tmppath, showWarnings = FALSE)
-#sets temp directory
-rasterOptions(tmpdir=file.path(tmppath)) 
+# run inside foreach now
+# tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", "run", newname)
+# dir.create(path = tmppath, showWarnings = FALSE)
+# #sets temp directory
+# rasterOptions(tmpdir=file.path(tmppath)) 
+
 # this loop takes a lot of time
 
 system.time({
@@ -108,11 +118,17 @@ system.time({
             .export = c("rasfiles", "substages")) %dopar%{
               # .inorder = FALSE) %do%{
               # foreach(i = ls, .packages = "raster") %dopar% {
+              tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", i, "run", m)
+              dir.create(path = tmppath, showWarnings = FALSE)
+              #sets temp directory
               rasterOptions(tmpdir=file.path(tmppath)) 
               
               fs <- sort(rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)])
               fs <- sort(fs[grep(pattern = m, x = fs, fixed = TRUE)])
-              ll <- replicate(nlayers(brick(fs[1])), brick(fs[1])[[1]])
+              template <- brick(fs[1])[[1]]
+              template[!is.na(template)] <- 0
+              
+              ll <- replicate(nlayers(brick(fs[1])), template)
               blank <- brick(ll)
               for (j in 1:length(fs)){
                 ras_weighted <- brick(fs[j]) * substages[j, 2] # weights for each substage size
@@ -123,6 +139,9 @@ system.time({
               removeTmpFiles(h = 0)
             }
 })
+
+stopCluster(cl) #WINDOWS
+
 
 # mosaic maps together if CONUS
 # maybe hold off on this since its files so large
