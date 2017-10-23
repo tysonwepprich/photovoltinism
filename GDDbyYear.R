@@ -15,30 +15,41 @@ rasterOptions(overwrite = FALSE,
 # for parallel simulations with control over seed for reproducibility
 library(doRNG)
 library(foreach) # for parallelized loops
-library(doMC) 
+# library(doMC) 
+library(doSNOW) # for WINDOWS
 
-region_param <- "CONUS"
+region_param <- "WEST"
 
 LDT <- 10
 UDT <- 37.8
 
-base_path <- "/data/PRISM/"
-years <- 2007 #c(2007:2013)
+# base_path <- "/data/PRISM/"
+base_path <- "prismDL"
+
+years <- c(2014:2017)
+# LINUX
+# ncores <- length(years)
+# registerDoMC(cores = ncores)
+
+# WINDOWS
 ncores <- length(years)
-registerDoMC(cores = ncores)
+cl <- makeCluster(ncores)
+registerDoSNOW(cl)
 
 foreach(yr = years, .packages= "raster")   %dopar% {
   prism_path <- paste(base_path, yr, sep = "/")
   
   #Search pattern for PRISM daily temperature grids. Load them for processing.
   pattern = paste("(PRISM_tmin_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
-  tminfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE)
+  tminfiles <- list.files(path = prism_path, pattern=pattern, 
+                          all.files=FALSE, full.names=TRUE, recursive = TRUE)
   r <- raster(tminfiles[1])
   tminstack <- stack(r)
   tminstack@layers <- sapply(tminfiles, function(x) { r@file@name=x; r } ) 
   
   pattern = paste("(PRISM_tmax_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
-  tmaxfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE)
+  tmaxfiles <- list.files(path = prism_path, pattern=pattern, 
+                          all.files=FALSE, full.names=TRUE, recursive = TRUE)
   r <- raster(tmaxfiles[1])
   tmaxstack <- stack(r)
   tmaxstack@layers <- sapply(tmaxfiles, function(x) { r@file@name=x; r } ) 
@@ -48,7 +59,8 @@ foreach(yr = years, .packages= "raster")   %dopar% {
                    "CONUS"        = extent(-125.0,-66.5,24.0,50.0),
                    "NORTHWEST"    = extent(-125.1,-103.8,40.6,49.2),
                    "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612),
-                   "TEST"         = extent(-124, -122.5, 44, 45))
+                   "TEST"         = extent(-124, -122.5, 44, 45),
+                   "WEST"         = extent(-125.14, -109, 37, 49.1))
   
   tminstack <- crop(tminstack, REGION)
   tmaxstack <- crop(tmaxstack, REGION)
@@ -65,12 +77,13 @@ foreach(yr = years, .packages= "raster")   %dopar% {
                                        Cond((y > LDT) & (x >= UDT), 6*(x+y-2*LDT)/12 - (Tmp2/12),
                                             Cond((y > LDT) & (x < UDT), 6*(x+y-2*LDT)/12,0))))))
                  },
-                 filename = paste("dailygdd", yr, sep = "_"),
+                 filename = paste("dailygdd", yr, region_param, sep = "_"),
                  recycle = FALSE,
                  overwrite = TRUE)
   # })
 
-}
+} # end foreach loop
+stopCluster(cl) #WINDOWS
 
 
 rasfiles <- list.files(pattern = "dailygdd")
