@@ -21,6 +21,7 @@ library(mgcv)
 library(grid)
 library(fitdistrplus)
 library(stringr)
+library(mixsmsn)
 
 theme_set(theme_bw(base_size = 14)) 
 
@@ -652,7 +653,7 @@ test <- SubstageDistrib(newdist, numstage = 7, perc = .99)
 Skewed t or skewed normal to fit adult observations. Simulate accumulating egg counts from this adult distribution to figure out best pre-oviposition period
 
 ```{r}
-preovipDD <- 50
+preovipDD <- 15
 
 adultcount <- newdist %>% 
   dplyr::filter(row_number() %% 5 == 0) %>%
