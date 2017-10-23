@@ -4,8 +4,10 @@
 
 
 library(prism)
-startdate <- "2015-01-01"
-enddate <- "2015-12-31"
-get_prism_dailys("tmin", minDate = startdate, 
+options(prism.path = "prismDL")
+
+startdate <- "2017-01-01"
+enddate <- "2017-10-21"
+get_prism_dailys("tmax", minDate = startdate, 
                  maxDate = enddate, keepZip = FALSE)
 
