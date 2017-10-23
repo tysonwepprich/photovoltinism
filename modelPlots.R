@@ -12,8 +12,8 @@ rasterOptions(overwrite = FALSE,
 # for parallel simulations with control over seed for reproducibility
 library(doRNG)
 library(foreach) # for parallelized loops
-# library(doMC) # for LINUX
-library(doSNOW) # for WINDOWS
+library(doMC) # for LINUX
+# library(doSNOW) # for WINDOWS
 
 
 library(ggplot2)
@@ -27,7 +27,7 @@ theme_set(theme_bw(base_size = 14))
 library(gridExtra)
 library(grid)
 # results directory
-newname <- "GCA_CONUS_NorthCDL"
+newname <- "GCA_CONUS_SouthCDL"
 
 source('CDL_funcs.R')
 region_param <- "CONUS"
@@ -66,7 +66,7 @@ sites <- data.frame(ID = c("Corvallis, OR", "Richland, WA", "JB Lewis-McCord, WA
                           46.728247, 36.943103, 43.044083, 38.513995, 42.457068,
                           35.173401, 41.252509, 39.704018))
 
-
+# 45.474031, -122.655566 Portland Selwood
 
 
 nsim <- 7
