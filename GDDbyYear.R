@@ -43,6 +43,9 @@ foreach(yr = years, .packages= "raster")   %dopar% {
   pattern = paste("(PRISM_tmin_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
   tminfiles <- list.files(path = prism_path, pattern=pattern, 
                           all.files=FALSE, full.names=TRUE, recursive = TRUE)
+  dates <- regexpr(pattern = "[0-9]{8}", text = tminfiles)
+  fileorder <- order(regmatches(tminfiles, dates))
+  tminfiles <- tminfiles[fileorder]
   r <- raster(tminfiles[1])
   tminstack <- stack(r)
   tminstack@layers <- sapply(tminfiles, function(x) { r@file@name=x; r } ) 
@@ -50,6 +53,9 @@ foreach(yr = years, .packages= "raster")   %dopar% {
   pattern = paste("(PRISM_tmax_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
   tmaxfiles <- list.files(path = prism_path, pattern=pattern, 
                           all.files=FALSE, full.names=TRUE, recursive = TRUE)
+  dates <- regexpr(pattern = "[0-9]{8}", text = tmaxfiles)
+  fileorder <- order(regmatches(tmaxfiles, dates))
+  tmaxfiles <- tmaxfiles[fileorder]
   r <- raster(tmaxfiles[1])
   tmaxstack <- stack(r)
   tmaxstack@layers <- sapply(tmaxfiles, function(x) { r@file@name=x; r } ) 
@@ -64,6 +70,7 @@ foreach(yr = years, .packages= "raster")   %dopar% {
   
   tminstack <- crop(tminstack, REGION)
   tmaxstack <- crop(tmaxstack, REGION)
+  
 
   # system.time({
   GDD <- overlay(x = tmaxstack, y = tminstack, 
@@ -84,6 +91,28 @@ foreach(yr = years, .packages= "raster")   %dopar% {
 
 } # end foreach loop
 stopCluster(cl) #WINDOWS
+
+# 
+# # plot prism rasterbrick
+# # testing
+# res <- tmaxstack
+# names(res) <- paste("d", formatC(1:nlayers(res), width = 3, format = "d", flag = "0"), sep = "")
+# 
+# gdd <- raster::extract(res, y = sites[, 2:3])
+# gdd <- cbind(sites, gdd)
+# gdd <- gdd %>% 
+#   tidyr::gather(key = "DOY", value = "GDD", d001:d294) %>% 
+#   dplyr::mutate(DOY = as.numeric(gsub(pattern = "d", replacement = "", x = .$DOY))) %>% 
+#   group_by(ID) %>% 
+#   arrange(DOY) %>% 
+#   dplyr::mutate(Accum_GDD = cumsum(GDD))
+# 
+# plt <- ggplot(gdd, aes(x = DOY, y = GDD, group = ID)) +
+#   geom_line(size = 2) +
+#   facet_wrap(~ID, scales = "free_y")
+# plt
+
+
 
 
 rasfiles <- list.files(pattern = "dailygdd")

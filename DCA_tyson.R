@@ -1,14 +1,5 @@
-# Take Gerricke's FCM code and convert to Galerucella parameters
-# Add photoperiod variation and substages
-
-# TODO
-# -Output has strange shoreline edges with no results. Not NA, but
-# also does not advance lifestages. Issue with PRISM or raster?
-# -Pest Event Maps
-# -Diapause stage leading to overwintering stage (using same raster?)
-# -Parallel amended to use doParallel package wrapper for cross platform
-# -Frost events at start/end of season. Track annual variation in season length.
-# -Twilight assumption plays big role in potential voltinism
+# Diorhabda life cycle model
+# based on Galerucella model developed by Gerricke, Len, and Tyson
 
 #####
 # packages, options, functions loaded
@@ -53,7 +44,7 @@ region_param <- "WEST"
 # life cycle parameters
 stgorder   <- c("OA","E","L","P","A","F")
 photo_sens <- 3 #c(-1, 3) # integer life stages for now
-CDL_mu        <- 16.23 # 15.52
+# CDL_mu        <- 
 model_CDL  <- 1 # if 1, model photoperiod decision
 CDL_log    <- 1 # if 1, model CDL from logistic regression results
 owstage    <- "OA"
@@ -63,21 +54,20 @@ owstage    <- "OA"
 coefs <- c(-60.3523, 3.8888) # Southern
 # Degree day thresholds
 # LDT = lower development threshold, temp at which growth = 0 (using PRISM tmean)
-eggLDT     <- 10
-eggUDT     <- 37.8  
-larvaeLDT  <- 10
-larvaeUDT  <- 37.8  
-pupaeLDT   <- 10
-pupaeUDT   <- 37.8
-adultLDT   <- 10 
-adultUDT   <- 37.8
+eggLDT     <- 11
+eggUDT     <- 36.7  
+larvaeLDT  <- 11
+larvaeUDT  <- 36.7  
+pupaeLDT   <- 11
+pupaeUDT   <- 36.7
+adultLDT   <- 11
+adultUDT   <- 36.7
 # Degree day requirements for life stages
 # DD = degree days, number of cumulative heat units to complete that lifestage
 OWadultDD_mu  <- 167.6 #based on Oregon counts
-  #or 108 based on McAvoy 1997 phenology of 3 years
-eggDD_mu = 93.3
-larvaeDD_mu = 136.4 # 46.9 + 45.8 + 43.7 instars
-pupDD_mu = 137.7 
+eggDD_mu = 95
+larvaeDD_mu = 186
+pupDD_mu = 188 
 adultDD_mu = 125.9 #time to oviposition
 # GDD data and calculation
 gdd_data <- "load" # "calculate"
@@ -303,7 +293,7 @@ system.time({
                         "newname", "params"),
             .inorder = FALSE) %dopar%{
               # .inorder = FALSE) %do%{
-
+              
               # creates unique filepath for temp directory to store rasters
               tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", "run", map, sim)
               dir.create(path = tmppath, showWarnings = FALSE)

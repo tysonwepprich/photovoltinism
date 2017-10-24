@@ -13,7 +13,7 @@ rasterOptions(overwrite = FALSE,
 library(doRNG)
 library(foreach) # for parallelized loops
 library(doMC) # for LINUX
-# library(doSNOW) # for WINDOWS
+library(doSNOW) # for WINDOWS
 
 
 library(ggplot2)
@@ -27,11 +27,11 @@ theme_set(theme_bw(base_size = 14))
 library(gridExtra)
 library(grid)
 # results directory
-newname <- "GCA_CONUS_SouthCDL"
+newname <- "GCA_WEST_SCDL_2017"
 
 source('CDL_funcs.R')
-region_param <- "CONUS"
-gdd_file <- "meanGDD_07_13.grd"
+region_param <- "WEST"
+gdd_file <- "dailygdd_2017_WEST.grd"
 
 REGION <- switch(region_param,
                  "CONUS"        = extent(-125.0,-66.5,24.0,50.0),
@@ -51,22 +51,25 @@ template[!is.na(template)] <- 0
 template <- crop(template, REGION)
 
 # coordinates as examples
-sites <- data.frame(ID = c("Corvallis, OR", "Richland, WA", "JB Lewis-McCord, WA", "Palermo, CA", 
+sites <- data.frame(ID = c("Corvallis, OR", "Richland, WA", "JB Lewis-McChord, WA", "Palermo, CA", 
                            "Ephrata, WA", "Yakima Training Center, WA", "Camp Rilea, OR",
                            "Ft Drum, NY", "West Point, NY", "Kellogg LTER, MI",
                            "The Wilds, OH", "Duluth, MN", "Coeburn, VA", "Mountain Home AFB, ID",
                            "Quantico MCB, VA", "Hanscom AFB, MA", "Ft Bragg, NC",
-                           "Ogden, UT", "Buckley AFB, CO"),
+                           "Ogden, UT", "Buckley AFB, CO", "S Portland, OR",
+                           "Sutherlin, OR", "Bellingham, WA"),
                     x = c(-123.263, -119.283, -122.53, -121.625360, -119.555424, -120.461073,
                           -123.934759, -75.763566, -73.962210, -85.402260, -81.733314,
                           -92.158597, -82.466417, -115.865101, -77.311254, -71.276231,
-                          -79.083248, -112.052908, -104.752266),
+                          -79.083248, -112.052908, -104.752266, -122.658887,
+                          -123.315854, -122.479482),
                     y = c(44.564, 46.275, 47.112, 39.426829, 47.318546, 46.680138, 
                           46.122867, 44.055684, 41.388456, 42.404749, 39.829447,
                           46.728247, 36.943103, 43.044083, 38.513995, 42.457068,
-                          35.173401, 41.252509, 39.704018))
+                          35.173401, 41.252509, 39.704018, 45.470532,
+                          43.387721, 48.756105))
 
-# 45.474031, -122.655566 Portland Selwood
+
 
 
 nsim <- 7
@@ -91,7 +94,7 @@ inputdist <- data.frame(x = x, y = y) %>%
 substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
 # To get observations to fit for overwinter adults and F1 eggs, 
 # overwinter pre-oviposition period is only 50 deg days
-substages$means <- substages$means + 50
+substages$means <- substages$means + 15
 
 
 ####################################
@@ -108,14 +111,16 @@ ls <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1])
 maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,2])
 # sims <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,3])
 # sims <- gsub(pattern = ".grd", replacement = "", x = sims)
-# parallel backend
-# LINUX
-ncores <- length(ls) * length(maps) / 2
-registerDoMC(cores = ncores)
-# # WINDOWS
-# ncores <- 4
-# cl <- makeCluster(ncores) 
-# registerDoSNOW(cl)
+
+# parallel backend for foreach loop
+if(.Platform$OS.type == "unix"){
+  ncores <- length(ls) * length(maps) / 2
+  registerDoMC(cores = ncores)
+}else if(.Platform$OS.type == "windows"){
+  ncores <- parallel::detectCores() / 2
+  cl <- makeCluster(ncores)
+  registerDoSNOW(cl)
+}
 
 # run inside foreach now
 # tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", "run", newname)
@@ -159,7 +164,7 @@ system.time({
 })
 
 stopCluster(cl) #WINDOWS
-setwd(returnwd)
+# setwd(returnwd)
 
 
 # # remove non-weighted results to save disk space
@@ -222,7 +227,7 @@ plot(res[[seq(180, 220, 5)]])
 # shows rapid change, only if within sensitive stage
 # plot CDL as it moves through time and space
 
-
+res <- brick(gdd_file)
 res <- brick(paste(newname, "/", "LS4_weighted.grd", sep = ""))
 # 
 # test <- vector()
@@ -314,12 +319,25 @@ ggsave(paste("NEW","CDL", ".png", sep = ""),
 mygrid <- data.frame(
   code = c("JBLM", "DRUM", "EPHR", "BOIS", "DULU", "MASS", "WSPT", "YAKI", "RILE",
            "UTAH", "KBST", "COEB", "WILD", "CORV", "DENV", "QUAN", "PLMO", "BRAG"),
-  name = c("JB Lewis-McCord, WA", "Ft Drum, NY", "Ephrata, WA", "Mountain Home AFB, ID",
+  name = c("JB Lewis-McChord, WA", "Ft Drum, NY", "Ephrata, WA", "Mountain Home AFB, ID",
            "Duluth, MN", "Hanscom AFB, MA", "West Point, NY", "Yakima Training Center, WA",
            "Camp Rilea, OR", "Ogden, UT", "Kellogg LTER, MI", "Coeburn, VA", "The Wilds, OH",
            "Corvallis, OR", "Buckley AFB, CO", "Quantico MCB, VA", "Palermo, CA", "Ft Bragg, NC"),
   row = c(1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3),
   col = c(1, 5, 2, 3, 4, 6, 6, 2, 1, 3, 4, 5, 4, 1, 3, 6, 2, 5),
+  stringsAsFactors = FALSE
+)
+
+mygrid <- data.frame(
+  code = c("JBLM", "EPHR", "YAKI", "RILE",
+           "CORV", "PLMO", "PORT", "BELL", "SUTH"),
+  name = c("JB Lewis-McChord, WA", "Ephrata, WA",
+           "Yakima Training Center, WA",
+           "Camp Rilea, OR", 
+           "Corvallis, OR", "Palermo, CA", "S Portland, OR", 
+           "Bellingham, WA", "Sutherlin, OR"),
+  row = c(2, 1, 1, 2, 3, 3, 2, 1, 3),
+  col = c(3, 2, 3, 1, 1, 3, 2, 1, 2),
   stringsAsFactors = FALSE
 )
 geofacet::grid_preview(mygrid)
@@ -341,12 +359,12 @@ for (i in rasfiles){
   stage_prop <- raster::extract(res, y = sites[, 2:3])
   stage_prop <- cbind(sites, stage_prop)
   stage_prop <- stage_prop %>% 
-    tidyr::gather(key = "DOY", value = "Proportion", d001:d365) %>% 
+    tidyr::gather(key = "DOY", value = "Proportion", d001:d294) %>% 
     dplyr::mutate(DOY = as.numeric(gsub(pattern = "d", replacement = "", x = .$DOY)))
   gdd <- raster::extract(GDD, y = sites[, 2:3])
   gdd <- cbind(sites, gdd)
   gdd <- gdd %>% 
-    tidyr::gather(key = "DOY", value = "GDD", layer.1:layer.365) %>% 
+    tidyr::gather(key = "DOY", value = "GDD", layer.1:layer.294) %>% 
     dplyr::mutate(DOY = as.numeric(gsub(pattern = "layer.", replacement = "", x = .$DOY))) %>% 
     group_by(ID) %>% 
     arrange(DOY) %>% 
@@ -393,10 +411,13 @@ pltdat2 <- tsdat %>% filter(Lifestage == "Diapause")
 
 pltdat <- bind_rows(pltdat1, pltdat2) %>% 
   filter(Lifestage %in% c("Egg", "Diapause"))
+# pltdat <- tsdat %>% 
+#   filter(Lifestage %in% c("Pupa", "Diapause"))
 
 plt <- ggplot(pltdat, aes(x = Accum_GDD, y = Proportion, group = Lifestage, color = Lifestage)) +
   geom_line(size = 2) +
-  facet_geo(~ID, grid = mygrid) 
+  facet_geo(~ID, grid = mygrid) +
+  geom_vline(xintercept = 100)
   # coord_cartesian(xlim = c(75, 300)) 
   # facet_wrap(~ID, ncol = 1)
 plt
@@ -405,8 +426,12 @@ ggsave(paste(newname,"LifestageTS", ".png", sep = ""),
        plot = plt, device = "png", width = 12, height = 8, units = "in")
 
 
-
-
+plt <- ggplot(gdd, aes(x = DOY, y = GDD, group = ID)) +
+  geom_line(size = 2) +
+  facet_geo(~ID, grid = mygrid, scales = "free_y")
+# coord_cartesian(xlim = c(75, 300)) 
+# facet_wrap(~ID, ncol = 1)
+plt
 
 
 ######
