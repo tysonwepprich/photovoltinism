@@ -1,0 +1,150 @@
+---
+title: "Diorhabda parameters"
+author: "Tyson Wepprich"
+date: "October 30, 2017"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    number_sections: false
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(lme4)
+theme_set(theme_bw(base_size = 14)) 
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##Summary
+Use growth chamber photoperiod responses for logistic regression models to account for variation in field responses to photoperiod in voltinism models.
+Approximate adult oviposition curve using DDRP parameters, convert to discrete substages for voltinism model.
+
+```{r import data}
+dat <- read.csv("data/DCA_CDL_2017.csv", header = TRUE)
+
+# convert daylength time to numeric for modeling
+dat$day <- sapply(strsplit(as.character(dat$day),":"),
+  function(x) {
+    x <- as.numeric(x)
+    x[1]+x[2]/60
+    }
+)
+dat$group <- as.factor(dat$group)
+dat$N <- dat$ndiap + dat$nrep
+dat$diapause <- dat$ndiap / dat$N
+dat <- dat[-which(dat$site %in% c("Parker", "St. George")), ]
+dat <- droplevels.data.frame(dat)
+
+```
+
+## Logistic models of photoperiod response
+
+```{r logistic regression}
+
+agdata <- aggregate(dat$diapause,by=list(dat$site, dat$day),FUN=mean)
+
+output=glm(diapause~day, subset=site=='Big Bend State Park',data=dat,family=binomial)
+
+# # This makes a response variable for survival that accounts for number of eggs in each row
+# # Better to use this than percent survived
+# diap.var = cbind(dat$ndiap, dat$N - dat$ndiap)
+# 
+# # glmer is for logistic regression with random effects of mother
+# # without random effects, you would use the glm function with the binomial family
+# output=glm(diap.var ~ day, subset=site=='Big Bend State Park', data=dat, family=binomial)
+# 
+# # mod <- glmer(diap.var ~ 1 + (1|mother), data = final.data, 
+# #              family = binomial)
+
+
+
+summary(output)
+anova(output,test="Chisq")
+coefs =coef(output)
+
+d1=subset(agdata,Group.1=="Big Bend State Park")
+
+plot(d1$x~d1$Group.2, ylab="Proportion diapause",xlab="Photoperiod (hrs)", xlim=c(16,11),col="red", cex=1.5, lwd=3,pch=0)
+curve(exp(coefs[1]+coefs[2]*x)/(1+exp(coefs[1]+coefs[2]*x)),col="red")
+
+# diap.var = cbind(dat$ndiap, dat$N - dat$ndiap)
+
+sitemods <- dat %>% 
+  nest(-site) %>% 
+  mutate(fit = map(data, ~glm(cbind(ndiap, N - ndiap) ~ day, data = ., family = binomial)),
+         coefs = map(fit, "coefficients"),
+         preds = map(fit, ~data.frame(day = seq(12, 16, length.out = 100), 
+                                 pred = predict(., newdata = data.frame(day = seq(12, 16, length.out = 100)), 
+                                   type = "response"))),
+         plots = map2(data, preds, ~ggplot(data = .x) +
+                        geom_point(aes(x = day, y = diapause)) +
+                        geom_line(data = .y, aes(x = day, y = pred))))
+
+plts <- sitemods %>% 
+  mutate(plots2 = map2(site, plots, ~.y + ggtitle(.x)))
+pltdat <- sitemods %>% 
+  unnest(preds)
+plt <- ggplot(dat, aes(x = day, y = diapause)) +
+  geom_point() +
+  geom_line(data = pltdat, aes(x = day, y = pred)) +
+  facet_wrap(~site, ncol = 2)
+plt
+
+```
+
+
+With random effects of site model.
+```{r glmer}
+dat$zday <- scale(dat$day)
+re_mod0 <- glmer(cbind(ndiap, N - ndiap) ~ 0 + (1 + zday | site), data = dat, family = binomial)
+re_mod1 <- glmer(cbind(ndiap, N - ndiap) ~ zday + (1 + zday | site), data = dat, family = binomial)
+re_mod2 <- glmer(cbind(ndiap, N - ndiap) ~ zday + (1 | site), data = dat, family = binomial)
+
+newdat <- expand.grid(list(zday = seq(-2.5, 2.5, length.out = 100),
+                              site = unique(dat$site)))
+newdat$pred <- predict(re_mod1, newdat, type = "response")
+newdat$day <- newdat$zday * attr(dat$zday, 'scaled:scale') + attr(dat$zday, 'scaled:center')
+
+plt <- ggplot(dat, aes(x = day, y = diapause)) +
+  geom_point() +
+  geom_line(data = newdat, aes(x = day, y = pred)) +
+  facet_wrap(~site, ncol = 2)
+plt
+
+# fedat <- sitemods %>% 
+#   unnest(preds)
+  
+plt2 <- plt +
+  geom_line(data = pltdat, aes(x = day, y = pred), color = "red")
+plt2
+
+
+```
+
+Oviposition distribution determined from DDRP estimates and skewed normal shape.
+
+```{r}
+
+# Galerucella skewed t distribution for oviposition
+arg1 = list(mu = 97.94, sigma2 = 2241.7, shape = 3.92, nu = 9.57)
+x = seq(50, 350, length.out = 1000)
+y = mixsmsn:::dt.ls(x, loc = arg1$mu, sigma2 = arg1$sigma2, shape = arg1$shape, nu = arg1$nu)
+newdist <- data.frame(x = x, y = y) %>% 
+  arrange(x) %>% 
+  mutate(CDF = cumsum(y/sum(y)))
+test <- SubstageDistrib(newdist, numstage = 7, perc = .99)
+
+# can't figure out how to fit distribution to a few specified quantiles
+# just use transformed Galerucella substages
+test$means <- test$means + 157
+
+
+
+```
+
+
+
+
+

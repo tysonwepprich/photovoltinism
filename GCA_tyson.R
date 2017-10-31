@@ -59,8 +59,8 @@ CDL_log    <- 1 # if 1, model CDL from logistic regression results
 owstage    <- "OA"
 # Logistic regression photoperiod
 # from Fritzi's lab data, two different populations
-# coefs <- c(-56.9745, 3.5101) # Northern
-coefs <- c(-60.3523, 3.8888) # Southern
+coefs <- c(-56.9745, 3.5101) # Northern
+# coefs <- c(-60.3523, 3.8888) # Southern
 # Degree day thresholds
 # LDT = lower development threshold, temp at which growth = 0 (using PRISM tmean)
 eggLDT     <- 10
@@ -691,4 +691,65 @@ system.time({
 if(.Platform$OS.type == "windows"){
   stopCluster(cl)
 }
+
+
+# Run model, but only with photoperiod update for speed
+# The way I built the diapause decision, model results
+# already track lifecycle through the end of GDD accumulation.
+# To update photoperiod response, just need to take model
+# results and rerun sens stage x photoperiod cue = diapause.
+
+# DOESN'T WORK WITH WEIGHTED RESULTS
+# NEED SEPARATE SUBSTAGE SIMS I THINK
+
+source('CDL_funcs.R')
+region_param <- "WEST"
+gdd_file <- "dailygdd_2017_WEST.grd"
+
+REGION <- switch(region_param,
+                 "CONUS"        = extent(-125.0,-66.5,24.0,50.0),
+                 "NORTHWEST"    = extent(-125.1,-103.8,40.6,49.2),
+                 "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612),
+                 "TEST"         = extent(-124, -122.5, 44, 45),
+                 "WEST"         = extent(-125.14, -109, 37, 49.1))
+
+
+GDD <- brick(gdd_file)
+
+template <- GDD[[1]]
+template[!is.na(template)] <- 0
+template <- crop(template, REGION)
+
+# input sensitive stage
+# values are 0-1 proportion of population in stage
+Lifestage <- brick("GCA_WEST_SCDL_2017/LS3_001_weighted.grd")
+Lifestage <- Lifestage + template
+
+LS4 <- Lifestage[[1]]
+LS4[!is.na(LS4)] <- 0
+
+for (d in 1:nlayers(Lifestage)){
+  # doy <- lubridate::yday(lubridate::ymd(d))
+  doy <- as.numeric(gsub("layer.", replacement = "", x = names(Lifestage)[d]))
+  photo <- RasterPhoto(template, doy, perc_twilight = 25)
+  
+  # sens_mask <- Cond(Lifestage %in% photo_sens, 1, 0)
+  prop_diap <- 1 - exp(cdl_b0 + cdl_b1 * photo) /
+    (1 + exp(cdl_b0 + cdl_b1 * photo))
+  # tmpLS4 <- Cond(sens_mask == 1, prop_diap, LS4)
+  
+  tmpLS4 <- Lifestage[[d]] * prop_diap
+  # LS4 <- tmpLS4 + LS4
+  # need to account for prop_diap declining up until solstice
+  # only let proportion diapausing increase over season
+  LS4 <- Cond(tmpLS4 < LS4, LS4, LS4 + tmpLS4)
+  if (!exists("LS4stack")){
+    LS4stack <- stack(LS4)
+  } else {
+    LS4stack <- addLayer(LS4stack, LS4)
+  }
+}
+
+plot(LS4stack[[seq(100, 290, 40)]])
+
 ################################  

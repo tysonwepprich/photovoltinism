@@ -340,7 +340,7 @@ mygrid <- data.frame(
   col = c(3, 2, 3, 1, 1, 3, 2, 1, 2),
   stringsAsFactors = FALSE
 )
-geofacet::grid_preview(mygrid)
+# geofacet::grid_preview(mygrid)
 
 # plot time series of each stage
 returnwd <- getwd()
@@ -414,7 +414,7 @@ pltdat <- bind_rows(pltdat1, pltdat2) %>%
 # pltdat <- tsdat %>% 
 #   filter(Lifestage %in% c("Pupa", "Diapause"))
 
-plt <- ggplot(pltdat, aes(x = Accum_GDD, y = Proportion, group = Lifestage, color = Lifestage)) +
+plt <- ggplot(pltdat, aes(x = DOY, y = Proportion, group = Lifestage, color = Lifestage)) +
   geom_line(size = 2) +
   facet_geo(~ID, grid = mygrid) +
   geom_vline(xintercept = 100)
