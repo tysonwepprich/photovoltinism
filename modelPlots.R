@@ -35,13 +35,7 @@ source('CDL_funcs.R')
 region_param <- "SOUTHWEST"
 gdd_file <- "dailygdd.grd"
 
-REGION <- switch(region_param,
-                 "CONUS"        = extent(-125.0,-66.5,24.0,50.0),
-                 "NORTHWEST"    = extent(-125.1,-103.8,40.6,49.2),
-                 "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612),
-                 "TEST"         = extent(-124, -122.5, 44, 45),
-                 "WEST"         = extent(-125.14, -109, 37, 49.1),
-                 "SOUTHWEST"    = extent(-120.17, -108.25, 31.5, 42.3))
+REGION <- assign_extent(region_param = region_param)
 
 states <- map_data("state", xlim = c(REGION@xmin, REGION@xmax),
                    ylim = c(REGION@ymin, REGION@ymax), lforce = "e")
@@ -77,7 +71,7 @@ template <- crop(template, REGION)
 sites <- data.frame(ID = c("Topock Marsh", "Lovelock", "Gold Butte", "Delta", "Big Bend State Park"),
                     x = c(-114.5387, -118.5950, -114.2188, -112.9576, -114.6479),
                     y = c(34.7649, 40.04388, 36.73357, 39.14386, 35.10547))
-sites$ID <- factor(sites$ID, c("Topock Marsh", "Big Bend State Park", "Gold Butte", "Delta", "Lovelock"))
+sites$ID <- factor(sites$ID, c("Lovelock", "Delta", "Gold Butte", "Big Bend State Park", "Topock Marsh"))
 
 
 nsim <- 7
@@ -419,12 +413,14 @@ pltdat2 <- tsdat %>% filter(Lifestage == "Diapause")
 #          Proportion = cummax(Proportion))
 
 pltdat <- bind_rows(pltdat1, pltdat2) %>% 
-  filter(Lifestage %in% c("Egg", "Diapause"))
+  filter(Lifestage %in% c("Egg", "Larva", "Adult", "Diapause")) %>% 
+  mutate(Date = as.Date(DOY, origin=as.Date("2015-12-31")))
 # pltdat <- tsdat %>% 
 #   filter(Lifestage %in% c("Pupa", "Diapause"))
 
-plt <- ggplot(pltdat, aes(x = Accum_GDD, y = Proportion, group = Lifestage, color = Lifestage)) +
+plt <- ggplot(pltdat, aes(x = Date, y = Proportion, group = Lifestage, color = Lifestage)) +
   geom_line(size = 2) +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b") +
   # facet_geo(~ID, grid = mygrid) +
   # geom_vline(xintercept = 100) +
   # coord_cartesian(xlim = c(75, 300)) 
@@ -435,11 +431,12 @@ ggsave(paste(newname,"LifestageTS", ".png", sep = ""),
        plot = plt, device = "png", width = 12, height = 8, units = "in")
 
 
+# plot of daily GDD by site
 plt <- ggplot(gdd, aes(x = DOY, y = GDD, group = ID)) +
   geom_line(size = 2) +
-  facet_geo(~ID, grid = mygrid, scales = "free_y")
+  # facet_geo(~ID, grid = mygrid, scales = "free_y")
 # coord_cartesian(xlim = c(75, 300)) 
-# facet_wrap(~ID, ncol = 1)
+facet_wrap(~ID, ncol = 1)
 plt
 
 
