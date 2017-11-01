@@ -15,6 +15,7 @@ library(tidyverse)
 library(lme4)
 theme_set(theme_bw(base_size = 14)) 
 knitr::opts_chunk$set(echo = TRUE)
+source('CDL_funcs.R')
 ```
 
 ##Summary
@@ -120,6 +121,15 @@ plt2 <- plt +
   geom_line(data = pltdat, aes(x = day, y = pred), color = "red")
 plt2
 
+# Extract parameters from mixed effects model fit on scaled daylength
+beta0 <- (coef(re_mod1)$site[, 1]) - 
+  (coef(re_mod1)$site[, 2] * attr(dat$zday, 'scaled:center')) / attr(dat$zday, 'scaled:scale')
+beta1 <- coef(re_mod1)$site[, 2] / attr(dat$zday, 'scaled:scale')
+
+betas <- data.frame(site = rownames(coef(re_mod1)$site), b0 = beta0, b1 = beta1) 
+newdat <- newdat %>% 
+  left_join(betas) %>% 
+  mutate(orig_pred = exp(b0 + b1 * day) / (1 + exp(b0 + b1 * day)))
 
 ```
 

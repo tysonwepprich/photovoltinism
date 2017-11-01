@@ -2,6 +2,7 @@
 # Add photoperiod variation and substages
 
 # TODO
+# -ARRANGE PRISM FILES IN ORDER AS CHECK (2017 off with naming differences)
 # -Output has strange shoreline edges with no results. Not NA, but
 # also does not advance lifestages. Issue with PRISM or raster?
 # -Pest Event Maps
@@ -9,6 +10,7 @@
 # -Parallel amended to use doParallel package wrapper for cross platform
 # -Frost events at start/end of season. Track annual variation in season length.
 # -Twilight assumption plays big role in potential voltinism
+
 
 #####
 # packages, options, functions loaded

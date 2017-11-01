@@ -27,7 +27,7 @@ rasterOptions(overwrite = FALSE,
 
 source('CDL_funcs.R') # load collection of functions for this model
 
-prism_path <- "prismDL/2017"
+prism_path <- "prismDL/2016"
 # prism_path <- "/data/PRISM/2014"
 # prism_path <- "/data/PRISM/"
 
@@ -39,8 +39,8 @@ prism_path <- "prismDL/2017"
 # Pest Specific, Multiple Life Stage Phenology Model Parameters:
 # model extext
 start_doy  <- 1
-end_doy    <- 294
-region_param <- "WEST"
+end_doy    <- 365
+region_param <- "SOUTHWEST"
 # life cycle parameters
 stgorder   <- c("OA","E","L","P","A","F")
 photo_sens <- 3 #c(-1, 3) # integer life stages for now
@@ -48,29 +48,35 @@ photo_sens <- 3 #c(-1, 3) # integer life stages for now
 model_CDL  <- 1 # if 1, model photoperiod decision
 CDL_log    <- 1 # if 1, model CDL from logistic regression results
 owstage    <- "OA"
+
 # Logistic regression photoperiod
-# from Fritzi's lab data, two different populations
-# coefs <- c(-56.9745, 3.5101) # Northern
-coefs <- c(-60.3523, 3.8888) # Southern
+# from Dan Bean's lab data, five different populations
+# NOTE: these give proportion diapause (GCA model had proportion reproductive)
+coefs <- c(53.82741, -3.939534) # Big Bend State Park
+# coefs <- c(102.64569, -7.170386) # Delta
+# coefs <- c(83.85416, -5.967620) # Gold Butte
+# coefs <- c(98.44406, -6.910930) # Lovelock
+# coefs <- c(31.22615, -2.448147) # Topock Marsh
+
 # Degree day thresholds
 # LDT = lower development threshold, temp at which growth = 0 (using PRISM tmean)
-eggLDT     <- 11
+eggLDT     <- 11.1
 eggUDT     <- 36.7  
-larvaeLDT  <- 11
+larvaeLDT  <- 11.1
 larvaeUDT  <- 36.7  
-pupaeLDT   <- 11
+pupaeLDT   <- 11.1
 pupaeUDT   <- 36.7
-adultLDT   <- 11
+adultLDT   <- 11.1
 adultUDT   <- 36.7
 # Degree day requirements for life stages
 # DD = degree days, number of cumulative heat units to complete that lifestage
-OWadultDD_mu  <- 167.6 #based on Oregon counts
-eggDD_mu = 95
-larvaeDD_mu = 186
-pupDD_mu = 188 
-adultDD_mu = 125.9 #time to oviposition
+OWadultDD_mu  <- 275
+eggDD_mu <-  95
+larvaeDD_mu <-  186
+pupDD_mu <-  188 
+adultDD_mu <-  51 #time to oviposition
 # GDD data and calculation
-gdd_data <- "load" # "calculate"
+gdd_data <- c("calculate", "load")[1] # choose one
 gdd_file <- "dailygdd_2017_WEST.grd"
 calctype   <-"triangle"
 # introducing individual variation, tracked with simulation for each substage
@@ -89,22 +95,16 @@ REGION <- switch(region_param,
                  "NORTHWEST"    = extent(-125.1,-103.8,40.6,49.2),
                  "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612),
                  "TEST"         = extent(-124, -122.5, 44, 45),
-                 "WEST"         = extent(-125.14, -109, 37, 49.1))
+                 "WEST"         = extent(-125.14, -109, 37, 49.1),
+                 "SOUTHWEST"    = extent(-120.17, -108.25, 31.5, 42.3))
 
 nday <- length(start_doy:end_doy)
 
 # Take empirical distribution and calculate substages
-# OW oviposition distribution
-# # TRY 1 with beta
-# eggdist <- dbeta(x = seq(0, 1, length.out = 1000), 
-#                  shape1 = 3.888677, shape2 = 2.174208)
-# inputdist <- data.frame(x = seq(59.6, 223.3677, length.out = 1000),
-#                         y = eggdist)
-# inputdist$CDF <- cumsum(inputdist$y) / sum(inputdist$y, na.rm = TRUE)
-# 
-# substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
+# OW oviposition distribution from Galerucella, with 157 DD added to fit 
+# Diorhabda phenology estimates in DDRP
 
-# Try 2 with skewed t
+# with skewed t
 arg1 = list(mu = 97.94, sigma2 = 2241.7, shape = 3.92, nu = 9.57)
 x = seq(50, 350, length.out = 1000)
 y = mixsmsn:::dt.ls(x, loc = arg1$mu, sigma2 = arg1$sigma2, shape = arg1$shape, nu = arg1$nu)
@@ -112,9 +112,7 @@ inputdist <- data.frame(x = x, y = y) %>%
   arrange(x) %>% 
   mutate(CDF = cumsum(y/sum(y)))
 substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
-# To get observations to fit for overwinter adults and F1 eggs, 
-# overwinter pre-oviposition period is only 50 deg days
-substages$means <- substages$means + 15
+substages$means <- substages$means + 157
 
 
 # try to run sims in parallel and also split map if large REGION
@@ -124,17 +122,6 @@ if (region_param == "CONUS"){
   ncores <- nsim
 }
 
-# avoid memory issues on laptop
-if(ncores > (parallel::detectCores() / 2)){
-  ncores <- parallel::detectCores() / 2
-}
-
-if(.Platform$OS.type == "unix"){
-  registerDoMC(cores = ncores)
-}else if(.Platform$OS.type == "windows"){
-  cl <- makeCluster(ncores)
-  registerDoSNOW(cl)
-}
 
 # still here for day naming in loop, but not necessary
 # figure out how to cut
@@ -167,8 +154,11 @@ if (gdd_data == "calculate"){
   #Sorting is necessary in most recent year with provisional data and different filename structure
   #Search pattern for PRISM daily temperature grids. Load them for processing.
   pattern = paste("(PRISM_tmin_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
-  files <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE)
-  #Check that there are enough files for the year
+  files <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
+  dates <- regexpr(pattern = "[0-9]{8}", text = files)
+  fileorder <- order(regmatches(files, dates))
+  files <- files[fileorder]
+  
   length(files)
   numlist <- vector()
   for (file in files) {
@@ -191,13 +181,19 @@ if (gdd_data == "calculate"){
     
     # load tmin/tmax, crop, calculate gdd for all days
     pattern = paste("(PRISM_tmin_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
-    tminfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE)
+    tminfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
+    dates <- regexpr(pattern = "[0-9]{8}", text = tminfiles)
+    fileorder <- order(regmatches(tminfiles, dates))
+    tminfiles <- tminfiles[fileorder]
     r <- raster(tminfiles[1])
     tminstack <- stack(r)
     tminstack@layers <- sapply(tminfiles, function(x) { r@file@name=x; r } ) 
     
     pattern = paste("(PRISM_tmax_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
-    tmaxfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE)
+    tmaxfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
+    dates <- regexpr(pattern = "[0-9]{8}", text = tmaxfiles)
+    fileorder <- order(regmatches(tmaxfiles, dates))
+    tmaxfiles <- tmaxfiles[fileorder]
     r <- raster(tmaxfiles[1])
     tmaxstack <- stack(r)
     tmaxstack@layers <- sapply(tmaxfiles, function(x) { r@file@name=x; r } ) 
@@ -275,6 +271,20 @@ dir.create(newname)
 
 # if errors with some sims/maps, rerun foreach loop below again for them
 # use folders left in raster tmp directory to know which didn't work
+
+
+# avoid memory issues on laptop
+if(ncores > (parallel::detectCores() / 2)){
+  ncores <- parallel::detectCores() / 2
+}
+
+if(.Platform$OS.type == "unix"){
+  registerDoMC(cores = ncores)
+}else if(.Platform$OS.type == "windows"){
+  cl <- makeCluster(ncores)
+  registerDoSNOW(cl)
+}
+
 
 #Run model
 ############################
@@ -584,7 +594,7 @@ system.time({
                       # but add new raster to track percent of population actually
                       # in diapause following logistic regression
                       sens_mask <- Cond(Lifestage %in% photo_sens, 1, 0)
-                      prop_diap <- 1 - exp(cdl_b0 + cdl_b1 * photo) /
+                      prop_diap <- exp(cdl_b0 + cdl_b1 * photo) / # add 1- to start if prop_repro in coefs
                         (1 + exp(cdl_b0 + cdl_b1 * photo))
                       tmpLS4 <- Cond(sens_mask == 1, prop_diap, LS4)
                       # need to account for prop_diap declining up until solstice

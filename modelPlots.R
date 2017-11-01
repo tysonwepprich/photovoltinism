@@ -27,18 +27,21 @@ theme_set(theme_bw(base_size = 14))
 library(gridExtra)
 library(grid)
 # results directory
-newname <- "GCA_WEST_SCDL_2017"
+# newname <- "GCA_WEST_SCDL_2017"
+newname <- "DCA_SW_2017"
+
 
 source('CDL_funcs.R')
-region_param <- "WEST"
-gdd_file <- "dailygdd_2017_WEST.grd"
+region_param <- "SOUTHWEST"
+gdd_file <- "dailygdd.grd"
 
 REGION <- switch(region_param,
                  "CONUS"        = extent(-125.0,-66.5,24.0,50.0),
                  "NORTHWEST"    = extent(-125.1,-103.8,40.6,49.2),
                  "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612),
                  "TEST"         = extent(-124, -122.5, 44, 45),
-                 "WEST"         = extent(-125.14, -109, 37, 49.1))
+                 "WEST"         = extent(-125.14, -109, 37, 49.1),
+                 "SOUTHWEST"    = extent(-120.17, -108.25, 31.5, 42.3))
 
 states <- map_data("state", xlim = c(REGION@xmin, REGION@xmax),
                    ylim = c(REGION@ymin, REGION@ymax), lforce = "e")
@@ -51,25 +54,30 @@ template[!is.na(template)] <- 0
 template <- crop(template, REGION)
 
 # coordinates as examples
-sites <- data.frame(ID = c("Corvallis, OR", "Richland, WA", "JB Lewis-McChord, WA", "Palermo, CA", 
-                           "Ephrata, WA", "Yakima Training Center, WA", "Camp Rilea, OR",
-                           "Ft Drum, NY", "West Point, NY", "Kellogg LTER, MI",
-                           "The Wilds, OH", "Duluth, MN", "Coeburn, VA", "Mountain Home AFB, ID",
-                           "Quantico MCB, VA", "Hanscom AFB, MA", "Ft Bragg, NC",
-                           "Ogden, UT", "Buckley AFB, CO", "S Portland, OR",
-                           "Sutherlin, OR", "Bellingham, WA"),
-                    x = c(-123.263, -119.283, -122.53, -121.625360, -119.555424, -120.461073,
-                          -123.934759, -75.763566, -73.962210, -85.402260, -81.733314,
-                          -92.158597, -82.466417, -115.865101, -77.311254, -71.276231,
-                          -79.083248, -112.052908, -104.752266, -122.658887,
-                          -123.315854, -122.479482),
-                    y = c(44.564, 46.275, 47.112, 39.426829, 47.318546, 46.680138, 
-                          46.122867, 44.055684, 41.388456, 42.404749, 39.829447,
-                          46.728247, 36.943103, 43.044083, 38.513995, 42.457068,
-                          35.173401, 41.252509, 39.704018, 45.470532,
-                          43.387721, 48.756105))
+# # Galerucella
+# sites <- data.frame(ID = c("Corvallis, OR", "Richland, WA", "JB Lewis-McChord, WA", "Palermo, CA", 
+#                            "Ephrata, WA", "Yakima Training Center, WA", "Camp Rilea, OR",
+#                            "Ft Drum, NY", "West Point, NY", "Kellogg LTER, MI",
+#                            "The Wilds, OH", "Duluth, MN", "Coeburn, VA", "Mountain Home AFB, ID",
+#                            "Quantico MCB, VA", "Hanscom AFB, MA", "Ft Bragg, NC",
+#                            "Ogden, UT", "Buckley AFB, CO", "S Portland, OR",
+#                            "Sutherlin, OR", "Bellingham, WA"),
+#                     x = c(-123.263, -119.283, -122.53, -121.625360, -119.555424, -120.461073,
+#                           -123.934759, -75.763566, -73.962210, -85.402260, -81.733314,
+#                           -92.158597, -82.466417, -115.865101, -77.311254, -71.276231,
+#                           -79.083248, -112.052908, -104.752266, -122.658887,
+#                           -123.315854, -122.479482),
+#                     y = c(44.564, 46.275, 47.112, 39.426829, 47.318546, 46.680138, 
+#                           46.122867, 44.055684, 41.388456, 42.404749, 39.829447,
+#                           46.728247, 36.943103, 43.044083, 38.513995, 42.457068,
+#                           35.173401, 41.252509, 39.704018, 45.470532,
+#                           43.387721, 48.756105))
 
-
+# Diorhabda
+sites <- data.frame(ID = c("Topock Marsh", "Lovelock", "Gold Butte", "Delta", "Big Bend State Park"),
+                    x = c(-114.5387, -118.5950, -114.2188, -112.9576, -114.6479),
+                    y = c(34.7649, 40.04388, 36.73357, 39.14386, 35.10547))
+sites$ID <- factor(sites$ID, c("Topock Marsh", "Big Bend State Park", "Gold Butte", "Delta", "Lovelock"))
 
 
 nsim <- 7
@@ -94,7 +102,7 @@ inputdist <- data.frame(x = x, y = y) %>%
 substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
 # To get observations to fit for overwinter adults and F1 eggs, 
 # overwinter pre-oviposition period is only 50 deg days
-substages$means <- substages$means + 15
+substages$means <- substages$means + 157
 
 
 ####################################
@@ -167,10 +175,11 @@ stopCluster(cl) #WINDOWS
 # setwd(returnwd)
 
 
-# # remove non-weighted results to save disk space
-cleanup <- list.files()
-cleanup <- cleanup[-grep("weighted", x = cleanup)]
-lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
+# # # remove non-weighted results to save disk space
+# # however, need results of each sim to model different photoperiod without total rerun
+# cleanup <- list.files()
+# cleanup <- cleanup[-grep("weighted", x = cleanup)]
+# lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
 
 # mosaic maps together if CONUS
 # maybe hold off on this since its files so large
@@ -348,7 +357,7 @@ setwd(newname)
 
 f <-list.files()
 rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
-# rasfiles <- rasfiles[grep(pattern = "weighted", x = rasfiles, fixed = TRUE)]
+rasfiles <- rasfiles[grep(pattern = "weighted", x = rasfiles, fixed = TRUE)]
 
 tmp <- list()
 for (i in rasfiles){
@@ -359,12 +368,12 @@ for (i in rasfiles){
   stage_prop <- raster::extract(res, y = sites[, 2:3])
   stage_prop <- cbind(sites, stage_prop)
   stage_prop <- stage_prop %>% 
-    tidyr::gather(key = "DOY", value = "Proportion", d001:d294) %>% 
+    tidyr::gather(key = "DOY", value = "Proportion", d001:d365) %>% 
     dplyr::mutate(DOY = as.numeric(gsub(pattern = "d", replacement = "", x = .$DOY)))
   gdd <- raster::extract(GDD, y = sites[, 2:3])
   gdd <- cbind(sites, gdd)
   gdd <- gdd %>% 
-    tidyr::gather(key = "DOY", value = "GDD", layer.1:layer.294) %>% 
+    tidyr::gather(key = "DOY", value = "GDD", layer.1:layer.365) %>% 
     dplyr::mutate(DOY = as.numeric(gsub(pattern = "layer.", replacement = "", x = .$DOY))) %>% 
     group_by(ID) %>% 
     arrange(DOY) %>% 
@@ -414,12 +423,12 @@ pltdat <- bind_rows(pltdat1, pltdat2) %>%
 # pltdat <- tsdat %>% 
 #   filter(Lifestage %in% c("Pupa", "Diapause"))
 
-plt <- ggplot(pltdat, aes(x = DOY, y = Proportion, group = Lifestage, color = Lifestage)) +
+plt <- ggplot(pltdat, aes(x = Accum_GDD, y = Proportion, group = Lifestage, color = Lifestage)) +
   geom_line(size = 2) +
-  facet_geo(~ID, grid = mygrid) +
-  geom_vline(xintercept = 100)
+  # facet_geo(~ID, grid = mygrid) +
+  # geom_vline(xintercept = 100) +
   # coord_cartesian(xlim = c(75, 300)) 
-  # facet_wrap(~ID, ncol = 1)
+  facet_wrap(~ID, ncol = 1)
 plt
 
 ggsave(paste(newname,"LifestageTS", ".png", sep = ""),
