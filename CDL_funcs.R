@@ -1,7 +1,9 @@
 
 '%!in%' <- function(x,y)!('%in%'(x,y))
 
-
+isFALSE <- function (x) {
+  identical(x, FALSE)
+}
 ########                       BEGINNING function definitions                      #########
 #### if then else raster function [sim. to GRASS r.mapcalc if(x,a,b)]:
 Cond=function(condition, trueValue, falseValue){
@@ -177,4 +179,15 @@ CombineMaps <- function(rasfiles, tmpdir, newdir){
   
 }
 
-
+#####
+# Add new extent definitions here for use in models and plots
+assign_extent <- function(region_param = c("CONUS", "NORTHWEST", "OR", "TEST", "WEST", "SOUTHWEST")){
+  REGION <- switch(region_param,
+                   "CONUS"        = extent(-125.0,-66.5,24.0,50.0),
+                   "NORTHWEST"    = extent(-125.1,-103.8,40.6,49.2),
+                   "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612),
+                   "TEST"         = extent(-124, -122.5, 44, 45),
+                   "WEST"         = extent(-125.14, -109, 37, 49.1),
+                   "SOUTHWEST"    = extent(-120.17, -108.25, 31.5, 42.3))
+  return(REGION)
+}

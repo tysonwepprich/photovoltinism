@@ -13,7 +13,7 @@ rasterOptions(overwrite = FALSE,
 library(doRNG)
 library(foreach) # for parallelized loops
 library(doMC) # for LINUX
-# library(doSNOW) # for WINDOWS
+library(doSNOW) # for WINDOWS
 
 
 library(ggplot2)
@@ -27,18 +27,15 @@ theme_set(theme_bw(base_size = 14))
 library(gridExtra)
 library(grid)
 # results directory
-newname <- "GCA_CONUS_SouthCDL"
+# newname <- "GCA_WEST_SCDL_2017"
+newname <- "DCA_SW_2017"
+
 
 source('CDL_funcs.R')
-region_param <- "CONUS"
-gdd_file <- "meanGDD_07_13.grd"
+region_param <- "SOUTHWEST"
+gdd_file <- "dailygdd.grd"
 
-REGION <- switch(region_param,
-                 "CONUS"        = extent(-125.0,-66.5,24.0,50.0),
-                 "NORTHWEST"    = extent(-125.1,-103.8,40.6,49.2),
-                 "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612),
-                 "TEST"         = extent(-124, -122.5, 44, 45),
-                 "WEST"         = extent(-125.14, -109, 37, 49.1))
+REGION <- assign_extent(region_param = region_param)
 
 states <- map_data("state", xlim = c(REGION@xmin, REGION@xmax),
                    ylim = c(REGION@ymin, REGION@ymax), lforce = "e")
@@ -51,22 +48,30 @@ template[!is.na(template)] <- 0
 template <- crop(template, REGION)
 
 # coordinates as examples
-sites <- data.frame(ID = c("Corvallis, OR", "Richland, WA", "JB Lewis-McCord, WA", "Palermo, CA", 
-                           "Ephrata, WA", "Yakima Training Center, WA", "Camp Rilea, OR",
-                           "Ft Drum, NY", "West Point, NY", "Kellogg LTER, MI",
-                           "The Wilds, OH", "Duluth, MN", "Coeburn, VA", "Mountain Home AFB, ID",
-                           "Quantico MCB, VA", "Hanscom AFB, MA", "Ft Bragg, NC",
-                           "Ogden, UT", "Buckley AFB, CO"),
-                    x = c(-123.263, -119.283, -122.53, -121.625360, -119.555424, -120.461073,
-                          -123.934759, -75.763566, -73.962210, -85.402260, -81.733314,
-                          -92.158597, -82.466417, -115.865101, -77.311254, -71.276231,
-                          -79.083248, -112.052908, -104.752266),
-                    y = c(44.564, 46.275, 47.112, 39.426829, 47.318546, 46.680138, 
-                          46.122867, 44.055684, 41.388456, 42.404749, 39.829447,
-                          46.728247, 36.943103, 43.044083, 38.513995, 42.457068,
-                          35.173401, 41.252509, 39.704018))
+# # Galerucella
+# sites <- data.frame(ID = c("Corvallis, OR", "Richland, WA", "JB Lewis-McChord, WA", "Palermo, CA", 
+#                            "Ephrata, WA", "Yakima Training Center, WA", "Camp Rilea, OR",
+#                            "Ft Drum, NY", "West Point, NY", "Kellogg LTER, MI",
+#                            "The Wilds, OH", "Duluth, MN", "Coeburn, VA", "Mountain Home AFB, ID",
+#                            "Quantico MCB, VA", "Hanscom AFB, MA", "Ft Bragg, NC",
+#                            "Ogden, UT", "Buckley AFB, CO", "S Portland, OR",
+#                            "Sutherlin, OR", "Bellingham, WA"),
+#                     x = c(-123.263, -119.283, -122.53, -121.625360, -119.555424, -120.461073,
+#                           -123.934759, -75.763566, -73.962210, -85.402260, -81.733314,
+#                           -92.158597, -82.466417, -115.865101, -77.311254, -71.276231,
+#                           -79.083248, -112.052908, -104.752266, -122.658887,
+#                           -123.315854, -122.479482),
+#                     y = c(44.564, 46.275, 47.112, 39.426829, 47.318546, 46.680138, 
+#                           46.122867, 44.055684, 41.388456, 42.404749, 39.829447,
+#                           46.728247, 36.943103, 43.044083, 38.513995, 42.457068,
+#                           35.173401, 41.252509, 39.704018, 45.470532,
+#                           43.387721, 48.756105))
 
-# 45.474031, -122.655566 Portland Selwood
+# Diorhabda
+sites <- data.frame(ID = c("Topock Marsh", "Lovelock", "Gold Butte", "Delta", "Big Bend State Park"),
+                    x = c(-114.5387, -118.5950, -114.2188, -112.9576, -114.6479),
+                    y = c(34.7649, 40.04388, 36.73357, 39.14386, 35.10547))
+sites$ID <- factor(sites$ID, c("Lovelock", "Delta", "Gold Butte", "Big Bend State Park", "Topock Marsh"))
 
 
 nsim <- 7
@@ -91,7 +96,7 @@ inputdist <- data.frame(x = x, y = y) %>%
 substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
 # To get observations to fit for overwinter adults and F1 eggs, 
 # overwinter pre-oviposition period is only 50 deg days
-substages$means <- substages$means + 50
+substages$means <- substages$means + 157
 
 
 ####################################
@@ -108,14 +113,16 @@ ls <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1])
 maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,2])
 # sims <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,3])
 # sims <- gsub(pattern = ".grd", replacement = "", x = sims)
-# parallel backend
-# LINUX
-ncores <- length(ls) * length(maps) / 2
-registerDoMC(cores = ncores)
-# # WINDOWS
-# ncores <- 4
-# cl <- makeCluster(ncores) 
-# registerDoSNOW(cl)
+
+# parallel backend for foreach loop
+if(.Platform$OS.type == "unix"){
+  ncores <- length(ls) * length(maps) / 2
+  registerDoMC(cores = ncores)
+}else if(.Platform$OS.type == "windows"){
+  ncores <- parallel::detectCores() / 2
+  cl <- makeCluster(ncores)
+  registerDoSNOW(cl)
+}
 
 # run inside foreach now
 # tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", "run", newname)
@@ -159,13 +166,14 @@ system.time({
 })
 
 stopCluster(cl) #WINDOWS
-setwd(returnwd)
+# setwd(returnwd)
 
 
-# # remove non-weighted results to save disk space
-cleanup <- list.files()
-cleanup <- cleanup[-grep("weighted", x = cleanup)]
-lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
+# # # remove non-weighted results to save disk space
+# # however, need results of each sim to model different photoperiod without total rerun
+# cleanup <- list.files()
+# cleanup <- cleanup[-grep("weighted", x = cleanup)]
+# lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
 
 # mosaic maps together if CONUS
 # maybe hold off on this since its files so large
@@ -222,7 +230,7 @@ plot(res[[seq(180, 220, 5)]])
 # shows rapid change, only if within sensitive stage
 # plot CDL as it moves through time and space
 
-
+res <- brick(gdd_file)
 res <- brick(paste(newname, "/", "LS4_weighted.grd", sep = ""))
 # 
 # test <- vector()
@@ -314,7 +322,7 @@ ggsave(paste("NEW","CDL", ".png", sep = ""),
 mygrid <- data.frame(
   code = c("JBLM", "DRUM", "EPHR", "BOIS", "DULU", "MASS", "WSPT", "YAKI", "RILE",
            "UTAH", "KBST", "COEB", "WILD", "CORV", "DENV", "QUAN", "PLMO", "BRAG"),
-  name = c("JB Lewis-McCord, WA", "Ft Drum, NY", "Ephrata, WA", "Mountain Home AFB, ID",
+  name = c("JB Lewis-McChord, WA", "Ft Drum, NY", "Ephrata, WA", "Mountain Home AFB, ID",
            "Duluth, MN", "Hanscom AFB, MA", "West Point, NY", "Yakima Training Center, WA",
            "Camp Rilea, OR", "Ogden, UT", "Kellogg LTER, MI", "Coeburn, VA", "The Wilds, OH",
            "Corvallis, OR", "Buckley AFB, CO", "Quantico MCB, VA", "Palermo, CA", "Ft Bragg, NC"),
@@ -322,7 +330,20 @@ mygrid <- data.frame(
   col = c(1, 5, 2, 3, 4, 6, 6, 2, 1, 3, 4, 5, 4, 1, 3, 6, 2, 5),
   stringsAsFactors = FALSE
 )
-geofacet::grid_preview(mygrid)
+
+mygrid <- data.frame(
+  code = c("JBLM", "EPHR", "YAKI", "RILE",
+           "CORV", "PLMO", "PORT", "BELL", "SUTH"),
+  name = c("JB Lewis-McChord, WA", "Ephrata, WA",
+           "Yakima Training Center, WA",
+           "Camp Rilea, OR", 
+           "Corvallis, OR", "Palermo, CA", "S Portland, OR", 
+           "Bellingham, WA", "Sutherlin, OR"),
+  row = c(2, 1, 1, 2, 3, 3, 2, 1, 3),
+  col = c(3, 2, 3, 1, 1, 3, 2, 1, 2),
+  stringsAsFactors = FALSE
+)
+# geofacet::grid_preview(mygrid)
 
 # plot time series of each stage
 returnwd <- getwd()
@@ -330,7 +351,7 @@ setwd(newname)
 
 f <-list.files()
 rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
-# rasfiles <- rasfiles[grep(pattern = "weighted", x = rasfiles, fixed = TRUE)]
+rasfiles <- rasfiles[grep(pattern = "weighted", x = rasfiles, fixed = TRUE)]
 
 tmp <- list()
 for (i in rasfiles){
@@ -392,21 +413,31 @@ pltdat2 <- tsdat %>% filter(Lifestage == "Diapause")
 #          Proportion = cummax(Proportion))
 
 pltdat <- bind_rows(pltdat1, pltdat2) %>% 
-  filter(Lifestage %in% c("Egg", "Diapause"))
+  filter(Lifestage %in% c("Egg", "Larva", "Adult", "Diapause")) %>% 
+  mutate(Date = as.Date(DOY, origin=as.Date("2015-12-31")))
+# pltdat <- tsdat %>% 
+#   filter(Lifestage %in% c("Pupa", "Diapause"))
 
-plt <- ggplot(pltdat, aes(x = Accum_GDD, y = Proportion, group = Lifestage, color = Lifestage)) +
+plt <- ggplot(pltdat, aes(x = Date, y = Proportion, group = Lifestage, color = Lifestage)) +
   geom_line(size = 2) +
-  facet_geo(~ID, grid = mygrid) 
+  scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+  # facet_geo(~ID, grid = mygrid) +
+  # geom_vline(xintercept = 100) +
   # coord_cartesian(xlim = c(75, 300)) 
-  # facet_wrap(~ID, ncol = 1)
+  facet_wrap(~ID, ncol = 1)
 plt
 
 ggsave(paste(newname,"LifestageTS", ".png", sep = ""),
        plot = plt, device = "png", width = 12, height = 8, units = "in")
 
 
-
-
+# plot of daily GDD by site
+plt <- ggplot(gdd, aes(x = DOY, y = GDD, group = ID)) +
+  geom_line(size = 2) +
+  # facet_geo(~ID, grid = mygrid, scales = "free_y")
+# coord_cartesian(xlim = c(75, 300)) 
+facet_wrap(~ID, ncol = 1)
+plt
 
 
 ######
