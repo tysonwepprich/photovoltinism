@@ -28,7 +28,7 @@ library(gridExtra)
 library(grid)
 # results directory
 # newname <- "GCA_WEST_SCDL_2017"
-newname <- "DCA_SW_2017"
+newname <- "DCA_SW_2016"
 
 
 source('CDL_funcs.R')
@@ -68,10 +68,10 @@ template <- crop(template, REGION)
 #                           43.387721, 48.756105))
 
 # Diorhabda
-sites <- data.frame(ID = c("Topock Marsh", "Lovelock", "Gold Butte", "Delta", "Big Bend State Park"),
+sites <- data.frame(ID = c("TopockMarsh", "Lovelock", "GoldButte", "Delta", "BigBend"),
                     x = c(-114.5387, -118.5950, -114.2188, -112.9576, -114.6479),
                     y = c(34.7649, 40.04388, 36.73357, 39.14386, 35.10547))
-sites$ID <- factor(sites$ID, c("Lovelock", "Delta", "Gold Butte", "Big Bend State Park", "Topock Marsh"))
+sites$ID <- factor(sites$ID, c("Lovelock", "Delta", "GoldButte", "BigBend", "TopockMarsh"))
 
 
 nsim <- 7
@@ -166,7 +166,7 @@ system.time({
 })
 
 stopCluster(cl) #WINDOWS
-# setwd(returnwd)
+setwd(returnwd)
 
 
 # # # remove non-weighted results to save disk space
@@ -345,20 +345,24 @@ mygrid <- data.frame(
 )
 # geofacet::grid_preview(mygrid)
 
-# plot time series of each stage
-returnwd <- getwd()
-setwd(newname)
 
-f <-list.files()
+f <-list.files(path = newname, recursive = TRUE, full.names = TRUE)
 rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
 rasfiles <- rasfiles[grep(pattern = "weighted", x = rasfiles, fixed = TRUE)]
+# rasfiles <- rasfiles[-grep(pattern = "LS4", x = rasfiles, fixed = TRUE)]
 
 tmp <- list()
 for (i in rasfiles){
-  ls <- unique(stringr::str_split_fixed(i, pattern = "_", 2)[,1])
+  fil <- stringr::str_split_fixed(i, pattern = "/", 3)
+  ls <- fil[grep(pattern = "weighted", x = fil, fixed = TRUE)]
+  ls <- unique(stringr::str_split_fixed(ls, pattern = "_", 2)[,1])
+  photo_resp <- fil[-grep(pattern = "weighted", x = fil, fixed = TRUE)]
+  photo_resp <- photo_resp[-grep(pattern = newname, x = photo_resp, fixed = TRUE)]
+  
+  
   res <- brick(i)
   names(res) <- paste("d", formatC(1:nlayers(res), width = 3, format = "d", flag = "0"), sep = "")
-
+  
   stage_prop <- raster::extract(res, y = sites[, 2:3])
   stage_prop <- cbind(sites, stage_prop)
   stage_prop <- stage_prop %>% 
@@ -374,12 +378,10 @@ for (i in rasfiles){
     dplyr::mutate(Accum_GDD = cumsum(GDD))
   outdf <- left_join(stage_prop, gdd)
   outdf$Lifestage <- ls
+  outdf$photo_resp <- photo_resp
   tmp[[length(tmp) + 1]] <- outdf
 }
-tsdat <- bind_rows(tmp) #%>% 
-  #filter(Lifestage != "NumGen")
-
-setwd(returnwd)
+tsdat <- bind_rows(tmp)
 
 
 tsdat$Lifestage <- factor(tsdat$Lifestage, c("LSOW", "LS0", "LS1", "LS2", "LS3", "LS4", "NumGen"))
@@ -396,12 +398,18 @@ pltdat <- tsdat # %>%
 # ggsave(paste("NEW","LifestageTS", ".png", sep = ""),
 #        plot = plt, device = "png", width = 8, height = 6, units = "in")
 
-# multiply egg and diapause
-diap <- pltdat$Proportion[pltdat$Lifestage == "Diapause"]
+# START HERE, maybe make diap a data.frame, merge with others to keep photo_resp?
+# multiply other lifestages with diapause proportion
+diap <- pltdat %>% 
+  dplyr::filter(Lifestage == "Diapause") %>% 
+  dplyr::select(ID, DOY, Proportion, photo_resp) %>% 
+  rename(Diap_Prop = Proportion)
 pltdat1 <- pltdat %>% 
-  filter(Lifestage %!in% c("Voltinism", "Diapause")) %>% 
-  group_by(Lifestage) %>% 
-  mutate(Proportion = Proportion * (1 - diap))
+  dplyr::select(-photo_resp) %>%
+  dplyr::filter(Lifestage %!in% c("Voltinism", "Diapause")) %>% 
+  left_join(diap) %>% 
+  # group_by(Lifestage) %>% 
+  mutate(Proportion = Proportion * (1 - Diap_Prop))
 # not sure how to do this: get voltinism from adult
 pltdat2 <- tsdat %>% filter(Lifestage == "Diapause")
 # # figuring out Voltinism from results
@@ -413,18 +421,26 @@ pltdat2 <- tsdat %>% filter(Lifestage == "Diapause")
 #          Proportion = cummax(Proportion))
 
 pltdat <- bind_rows(pltdat1, pltdat2) %>% 
-  filter(Lifestage %in% c("Egg", "Larva", "Adult", "Diapause")) %>% 
-  mutate(Date = as.Date(DOY, origin=as.Date("2015-12-31")))
+  filter(Lifestage %in% c("Egg", "Diapause")) %>% 
+  mutate(Date = as.Date(DOY, origin=as.Date("2015-12-31")),
+         photo_resp = paste("Photo", photo_resp, sep = "_"))
+pltdat$photo_resp <- factor(pltdat$photo_resp, 
+                            c("Photo_Lovelock", "Photo_Delta", "Photo_GoldButte",
+                              "Photo_BigBend", "Photo_TopockMarsh"))
+
 # pltdat <- tsdat %>% 
 #   filter(Lifestage %in% c("Pupa", "Diapause"))
 
-plt <- ggplot(pltdat, aes(x = Date, y = Proportion, group = Lifestage, color = Lifestage)) +
+plt <- ggplot(pltdat, aes(x = Accum_GDD, y = Proportion, group = Lifestage, color = Lifestage)) +
   geom_line(size = 2) +
-  scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+  # scale_x_date(date_breaks = "2 month", date_labels = "%b") +
+  # geom_rect(data = subset(pltdat, site == 'Big Bend State Park'), 
+  #           aes(fill = site), xmin = -Inf, xmax = Inf,
+  #           ymin = -Inf, ymax = Inf, alpha = 0.2)
   # facet_geo(~ID, grid = mygrid) +
   # geom_vline(xintercept = 100) +
   # coord_cartesian(xlim = c(75, 300)) 
-  facet_wrap(~ID, ncol = 1)
+  facet_grid(ID~photo_resp)
 plt
 
 ggsave(paste(newname,"LifestageTS", ".png", sep = ""),

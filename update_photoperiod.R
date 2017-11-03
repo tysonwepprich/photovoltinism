@@ -1,3 +1,6 @@
+# 3 minute runtime with 4 cores
+
+
 #####
 # packages, options, functions loaded
 #####
@@ -55,49 +58,22 @@ coefs <- c(102.64569, -7.170386) # Delta
 # coefs <- c(83.85416, -5.967620) # Gold Butte
 # coefs <- c(98.44406, -6.910930) # Lovelock
 # coefs <- c(31.22615, -2.448147) # Topock Marsh
-Lifestage <- Lifestage + template
-
-LS4 <- Lifestage[[1]]
-LS4[!is.na(LS4)] <- 0
-
-for (d in 1:nlayers(Lifestage)){
-  # doy <- lubridate::yday(lubridate::ymd(d))
-  doy <- as.numeric(gsub("layer.", replacement = "", x = names(Lifestage)[d]))
-  photo <- RasterPhoto(template, doy, perc_twilight = 25)
-  
-  # sens_mask <- Cond(Lifestage %in% photo_sens, 1, 0)
-  prop_diap <- 1 - exp(cdl_b0 + cdl_b1 * photo) /
-    (1 + exp(cdl_b0 + cdl_b1 * photo))
-  # tmpLS4 <- Cond(sens_mask == 1, prop_diap, LS4)
-  
-  tmpLS4 <- Lifestage[[d]] * prop_diap
-  # LS4 <- tmpLS4 + LS4
-  # need to account for prop_diap declining up until solstice
-  # only let proportion diapausing increase over season
-  LS4 <- Cond(tmpLS4 < LS4, LS4, LS4 + tmpLS4)
-  if (!exists("LS4stack")){
-    LS4stack <- stack(LS4)
-  } else {
-    LS4stack <- addLayer(LS4stack, LS4)
-  }
-}
-
-plot(LS4stack[[seq(100, 290, 40)]])
-
-
+sitedir <- "Delta"
 
 returnwd <- getwd()
 setwd(newname)
-
 f <-list.files()
 rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
-
 # for each sim with unique information to save
 ls <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1])
 maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,2])
 sims <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,3])
 sims <- gsub(pattern = ".grd", replacement = "", x = sims)
 sims <- sims[which(sims != "weighted")]
+cdl_b0 <- coefs[1]
+cdl_b1 <- coefs[2]
+mapcode <- maps # for this case, no split map
+
 
 # parallel backend for foreach loop
 if(.Platform$OS.type == "unix"){
@@ -109,46 +85,45 @@ if(.Platform$OS.type == "unix"){
   registerDoSNOW(cl)
 }
 
-# run inside foreach now
-# tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", "run", newname)
-# dir.create(path = tmppath, showWarnings = FALSE)
-# #sets temp directory
-# rasterOptions(tmpdir=file.path(tmppath)) 
-
-# this loop takes a lot of time
-
 system.time({
-  foreach(i = ls,
-          .packages= "raster",
-          .export = c("rasfiles", "substages")) %:% 
-    foreach(m = maps,
-            .packages = "raster",
-            .export = c("rasfiles", "substages")) %dopar%{
-              # .inorder = FALSE) %do%{
-              # foreach(i = ls, .packages = "raster") %dopar% {
-              tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", i, "run", m)
-              dir.create(path = tmppath, showWarnings = FALSE)
-              #sets temp directory
-              rasterOptions(tmpdir=file.path(tmppath)) 
+  foreach(sim = sims,
+          .packages = "raster",
+          .export = c("rasfiles", "template", "sitedir", "cdl_b0", "cdl_b1")) %dopar%{
+            
+            # for (sim in sims){
+            oldfile <- rasfiles[grep(pattern = sim, x = rasfiles, fixed = TRUE)]
+            oldfile <- oldfile[grep(pattern = sens, x = oldfile, fixed = TRUE)]
+            
+            sens_stage <- brick(oldfile)
+            sens_stage <- sens_stage + template
+            LS4 <- sens_stage[[1]]
+            LS4[!is.na(LS4)] <- 0
+            if (exists("LS4stack")){
+              rm(LS4stack)
+            } 
+            
+            for (d in 1:nlayers(sens_stage)){
+              # doy <- lubridate::yday(lubridate::ymd(d))
+              doy <- as.numeric(gsub("layer.", replacement = "", x = names(sens_stage)[d]))
+              photo <- RasterPhoto(template, doy, perc_twilight = 25)
               
-              fs <- sort(rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)])
-              fs <- sort(fs[grep(pattern = m, x = fs, fixed = TRUE)])
-              template <- brick(fs[1])[[1]]
-              template[!is.na(template)] <- 0
+              prop_diap <- exp(cdl_b0 + cdl_b1 * photo) /
+                (1 + exp(cdl_b0 + cdl_b1 * photo))
+              tmpLS4 <- Cond(sens_stage[[d]] == 1, prop_diap, LS4)
+              LS4 <- Cond(prop_diap < LS4, LS4, tmpLS4)
               
-              ll <- replicate(nlayers(brick(fs[1])), template)
-              blank <- brick(ll)
-              for (j in 1:length(fs)){
-                ras_weighted <- brick(fs[j]) * substages[j, 2] # weights for each substage size
-                blank <- overlay(blank, ras_weighted, fun=function(x,y) x + y)
+              if (!exists("LS4stack")){
+                LS4stack <- stack(LS4)
+              } else {
+                LS4stack <- addLayer(LS4stack, LS4)
               }
-              outras <- writeRaster(blank, filename = paste(i, m, "weighted", sep = "_"),
-                                    overwrite = TRUE)
-              removeTmpFiles(h = 0)
-              unlink(tmppath, recursive = TRUE)
-              
             }
+            
+            LS4File <- writeRaster(LS4stack, filename = paste(sitedir,"/", "LS4_", "001_", sim, sep = ""),
+                                   overwrite = TRUE, datatype = "FLT8S")
+          }
 })
 
+
 stopCluster(cl) #WINDOWS
-# setwd(returnwd)
+setwd(returnwd)
