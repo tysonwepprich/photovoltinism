@@ -345,7 +345,8 @@ mygrid <- data.frame(
 )
 # geofacet::grid_preview(mygrid)
 
-
+######
+# Plots of lifestage time series with different photoperiod responses
 f <-list.files(path = newname, recursive = TRUE, full.names = TRUE)
 rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
 rasfiles <- rasfiles[grep(pattern = "weighted", x = rasfiles, fixed = TRUE)]
@@ -398,7 +399,6 @@ pltdat <- tsdat # %>%
 # ggsave(paste("NEW","LifestageTS", ".png", sep = ""),
 #        plot = plt, device = "png", width = 8, height = 6, units = "in")
 
-# START HERE, maybe make diap a data.frame, merge with others to keep photo_resp?
 # multiply other lifestages with diapause proportion
 diap <- pltdat %>% 
   dplyr::filter(Lifestage == "Diapause") %>% 
@@ -421,7 +421,7 @@ pltdat2 <- tsdat %>% filter(Lifestage == "Diapause")
 #          Proportion = cummax(Proportion))
 
 pltdat <- bind_rows(pltdat1, pltdat2) %>% 
-  filter(Lifestage %in% c("Egg", "Diapause")) %>% 
+  filter(Lifestage %in% c("Egg", "Diapause")) %>%
   mutate(Date = as.Date(DOY, origin=as.Date("2015-12-31")),
          photo_resp = paste("Photo", photo_resp, sep = "_"))
 pltdat$photo_resp <- factor(pltdat$photo_resp, 
@@ -431,9 +431,9 @@ pltdat$photo_resp <- factor(pltdat$photo_resp,
 # pltdat <- tsdat %>% 
 #   filter(Lifestage %in% c("Pupa", "Diapause"))
 
-plt <- ggplot(pltdat, aes(x = Accum_GDD, y = Proportion, group = Lifestage, color = Lifestage)) +
+plt <- ggplot(pltdat, aes(x = Date, y = Proportion, group = Lifestage, color = Lifestage)) +
   geom_line(size = 2) +
-  # scale_x_date(date_breaks = "2 month", date_labels = "%b") +
+  scale_x_date(date_breaks = "2 month", date_labels = "%b") +
   # geom_rect(data = subset(pltdat, site == 'Big Bend State Park'), 
   #           aes(fill = site), xmin = -Inf, xmax = Inf,
   #           ymin = -Inf, ymax = Inf, alpha = 0.2)
@@ -443,7 +443,7 @@ plt <- ggplot(pltdat, aes(x = Accum_GDD, y = Proportion, group = Lifestage, colo
   facet_grid(ID~photo_resp)
 plt
 
-ggsave(paste(newname,"LifestageTS", ".png", sep = ""),
+ggsave(paste(newname,"LifestageTSdate", ".png", sep = ""),
        plot = plt, device = "png", width = 12, height = 8, units = "in")
 
 
@@ -454,6 +454,27 @@ plt <- ggplot(gdd, aes(x = DOY, y = GDD, group = ID)) +
 # coord_cartesian(xlim = c(75, 300)) 
 facet_wrap(~ID, ncol = 1)
 plt
+
+# example plot of lifestages
+
+pltdat <- bind_rows(pltdat1, pltdat2) %>% 
+  filter(Lifestage %in% c("Egg", "Diapause")) %>%
+  mutate(Date = as.Date(DOY, origin=as.Date("2015-12-31")),
+         photo_resp = paste("Photo", photo_resp, sep = "_"))
+pltdat$photo_resp <- factor(pltdat$photo_resp, 
+                            c("Photo_Lovelock", "Photo_Delta", "Photo_GoldButte",
+                              "Photo_BigBend", "Photo_TopockMarsh"))
+exdat <- pltdat %>% 
+  filter(ID == "BigBend", photo_resp == "Photo_BigBend") %>% 
+  filter(Lifestage != "Voltinism") %>% 
+  mutate(Date = as.Date(DOY, origin=as.Date("2015-12-31")))
+plt <- ggplot(exdat, aes(x = Accum_GDD, y = Proportion, group = Lifestage, color = Lifestage)) +
+  geom_line(size = 2)
+  # scale_x_date(date_breaks = "2 month", date_labels = "%b")
+plt
+
+ggsave(paste(newname,"SomeLSgdd", ".png", sep = ""),
+       plot = plt, device = "png", width = 8, height = 5, units = "in")
 
 
 ######
@@ -527,35 +548,48 @@ for (i in 1:length(days)){
 setwd(newname)
 
 days <- 365
-# rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
-# rasfiles <- rasfiles[grep(pattern = "all", x = rasfiles, fixed = TRUE)]
-# rasfiles <- rasfiles[grep(pattern = "NumGen", x = rasfiles, fixed = TRUE)]
-rasfiles <- c("LS4_all.grd", "NumGen_all.grd")
+f <-list.files(path = newname, recursive = TRUE, full.names = TRUE)
+rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
+rasfiles <- rasfiles[grep(pattern = "weighted", x = rasfiles, fixed = TRUE)]
+photosite <- rasfiles[grep(pattern = "LS4", x = rasfiles, fixed = TRUE)]
 
-volt <- brick(rasfiles[2])
-volt <- volt + template
-diap <- brick(rasfiles[1])
-diap <- diap + template
-threshold <- .8
-volt <- Cond(diap <= threshold, volt, 0)
-volt2 <- calc(volt, fun = function(x){cummax(x)})
+for (ps in photosite){
+  sitename <- stringr::str_split_fixed(string = ps, pattern = "/", n = 3)[2]
+  volt <- brick(rasfiles[grep(pattern = "NumGen", x = rasfiles, fixed = TRUE)])
+  volt <- volt + template
+  diap <- brick(ps)
+  diap <- diap + template
+  threshold <- .75
+  volt <- Cond(diap <= threshold, volt, 0)
+  volt2 <- calc(volt, fun = function(x){cummax(x)})
+  
+  df <- as.data.frame(volt2[[days]], xy=TRUE)
+  names(df)[3] <- "Voltinism"
+  
+  # discrete voltinism classes for visual
+  # df$Voltinism <- round(df$Voltinism/.5)*.5
+  df$Voltinism <- round(df$Voltinism)
+  df$Voltinism <- as.factor(as.character(df$Voltinism))
+  
+  sites_plt <- sites
+  sites_plt$show <- "A"
+  sites_plt$show[sites_plt$ID == sitename] <- "B"
+  
+  tmpplt <- ggplot(data = df, aes(x, y, fill = Voltinism)) +
+    geom_raster() +
+    geom_polygon(data = states, aes(group = group), fill = NA, color = "black", inherit.aes = TRUE, size = .1) +
+    theme_bw() +
+    coord_fixed(1.3) +
+    scale_fill_viridis(na.value = "white", begin = 0, end = 1, discrete = TRUE) + 
+    geom_point(data = sites_plt, aes(x = x, y = y, color = show), size = 2, inherit.aes = FALSE) +
+    scale_color_manual(values=c("white", "red")) +
+    ggtitle(paste(sitename, "photoperiod response", sep = " ")) +
+    guides(color = FALSE)
+  tmpplt
+  ggsave(paste(sitename,"_NumGen", ".png", sep = ""),
+         plot = tmpplt, device = "png", width = 8, height = 4.8, units = "in")
+}
 
-    df <- as.data.frame(volt2[[days]], xy=TRUE)
-    names(df)[3] <- "Voltinism"
-    
-setwd(returnwd)
-
-tmpplt <- ggplot(data = df, aes(x, y, fill = Voltinism)) +
-  geom_raster() +
-  geom_polygon(data = states, aes(group = group), fill = NA, color = "black", inherit.aes = TRUE, size = .1) +
-  theme_bw() +
-  scale_fill_viridis(na.value = "white", begin = 0, end = 1)  
-  # geom_point(data = sites, aes(x = x, y = y), size = 3, color = "black", inherit.aes = FALSE)
-  # geom_text(data = sites, aes(x = x, y = y, label = ID), inherit.aes = FALSE) + 
-  # ggtitle(ls_labels[p])
-tmpplt
-ggsave(paste(newname,"NumGen", ".png", sep = ""),
-       plot = tmpplt, device = "png", width = 8, height = 4.8, units = "in")
 
 # with partial generations considered
 pltdf <- resdf %>% 
