@@ -38,8 +38,8 @@ rasterOptions(overwrite = FALSE,
 
 source('CDL_funcs.R') # load collection of functions for this model
 
-prism_path <- "prismDL/2017"
-# prism_path <- "/data/PRISM/2014"
+# prism_path <- "prismDL/2017"
+prism_path <- "/data/PRISM/2014"
 # prism_path <- "/data/PRISM/"
 
 
@@ -50,8 +50,8 @@ prism_path <- "prismDL/2017"
 # Pest Specific, Multiple Life Stage Phenology Model Parameters:
 # model extext
 start_doy  <- 1
-end_doy    <- 294
-region_param <- "WEST"
+end_doy    <- 365
+region_param <- "NW_SMALL"
 # life cycle parameters
 stgorder   <- c("OA","E","L","P","A","F")
 photo_sens <- 3 #c(-1, 3) # integer life stages for now
@@ -82,7 +82,7 @@ larvaeDD_mu = 136.4 # 46.9 + 45.8 + 43.7 instars
 pupDD_mu = 137.7 
 adultDD_mu = 125.9 #time to oviposition
 # GDD data and calculation
-gdd_data <- "load" # "calculate"
+gdd_data <- "calculate" # c("load", "calculate")
 gdd_file <- "dailygdd_2017_WEST.grd"
 calctype   <-"triangle"
 # introducing individual variation, tracked with simulation for each substage
@@ -167,6 +167,7 @@ if (gdd_data == "load"){
   DT_same <- TRUE
 }
 
+
 if (gdd_data == "calculate"){
   
   #Order by date starting with first downloaded date. Up to user to download date range
@@ -174,8 +175,13 @@ if (gdd_data == "calculate"){
   #Sorting is necessary in most recent year with provisional data and different filename structure
   #Search pattern for PRISM daily temperature grids. Load them for processing.
   pattern = paste("(PRISM_tmin_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
-  files <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE)
-  #Check that there are enough files for the year
+  files <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
+  # files <- files[-grep(pattern = "10yr", x = files, fixed = TRUE)]
+  # files <- files[grep(pattern = "stable", x = files, fixed = TRUE)]
+  dates <- regexpr(pattern = "[0-9]{8}", text = files)
+  fileorder <- order(regmatches(files, dates))
+  files <- files[fileorder]
+  
   length(files)
   numlist <- vector()
   for (file in files) {
@@ -198,13 +204,19 @@ if (gdd_data == "calculate"){
     
     # load tmin/tmax, crop, calculate gdd for all days
     pattern = paste("(PRISM_tmin_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
-    tminfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE)
+    tminfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
+    dates <- regexpr(pattern = "[0-9]{8}", text = tminfiles)
+    fileorder <- order(regmatches(tminfiles, dates))
+    tminfiles <- tminfiles[fileorder]
     r <- raster(tminfiles[1])
     tminstack <- stack(r)
     tminstack@layers <- sapply(tminfiles, function(x) { r@file@name=x; r } ) 
     
     pattern = paste("(PRISM_tmax_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
-    tmaxfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE)
+    tmaxfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
+    dates <- regexpr(pattern = "[0-9]{8}", text = tmaxfiles)
+    fileorder <- order(regmatches(tmaxfiles, dates))
+    tmaxfiles <- tmaxfiles[fileorder]
     r <- raster(tmaxfiles[1])
     tmaxstack <- stack(r)
     tmaxstack@layers <- sapply(tmaxfiles, function(x) { r@file@name=x; r } ) 

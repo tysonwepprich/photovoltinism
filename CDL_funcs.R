@@ -179,12 +179,14 @@ CombineMaps <- function(rasfiles, tmpdir, newdir){
   
 }
 
+
 #####
 # Add new extent definitions here for use in models and plots
 assign_extent <- function(region_param = c("CONUS", "NORTHWEST", "OR", "TEST", "WEST", "SOUTHWEST")){
   REGION <- switch(region_param,
                    "CONUS"        = extent(-125.0,-66.5,24.0,50.0),
                    "NORTHWEST"    = extent(-125.1,-103.8,40.6,49.2),
+                   "NW_SMALL"      = extent(-125.1, -117.9, 38.5, 49.2),
                    "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612),
                    "TEST"         = extent(-124, -122.5, 44, 45),
                    "WEST"         = extent(-125.14, -109, 37, 49.1),
