@@ -22,7 +22,7 @@ library(mapdata)
 library(dplyr)
 library(tidyr)
 library(geofacet)
-theme_set(theme_bw(base_size = 14)) 
+theme_set(theme_bw(base_size = 12)) 
 
 library(gridExtra)
 library(grid)
@@ -32,7 +32,7 @@ newname <- "DCA_SW_2016"
 
 
 source('CDL_funcs.R')
-region_param <- "SOUTHWEST"
+region_param <- "NW_SMALL"
 gdd_file <- "dailygdd.grd"
 
 REGION <- assign_extent(region_param = region_param)
@@ -49,29 +49,29 @@ template <- crop(template, REGION)
 
 # coordinates as examples
 # # Galerucella
-# sites <- data.frame(ID = c("Corvallis, OR", "Richland, WA", "JB Lewis-McChord, WA", "Palermo, CA", 
-#                            "Ephrata, WA", "Yakima Training Center, WA", "Camp Rilea, OR",
-#                            "Ft Drum, NY", "West Point, NY", "Kellogg LTER, MI",
-#                            "The Wilds, OH", "Duluth, MN", "Coeburn, VA", "Mountain Home AFB, ID",
-#                            "Quantico MCB, VA", "Hanscom AFB, MA", "Ft Bragg, NC",
-#                            "Ogden, UT", "Buckley AFB, CO", "S Portland, OR",
-#                            "Sutherlin, OR", "Bellingham, WA"),
-#                     x = c(-123.263, -119.283, -122.53, -121.625360, -119.555424, -120.461073,
-#                           -123.934759, -75.763566, -73.962210, -85.402260, -81.733314,
-#                           -92.158597, -82.466417, -115.865101, -77.311254, -71.276231,
-#                           -79.083248, -112.052908, -104.752266, -122.658887,
-#                           -123.315854, -122.479482),
-#                     y = c(44.564, 46.275, 47.112, 39.426829, 47.318546, 46.680138, 
-#                           46.122867, 44.055684, 41.388456, 42.404749, 39.829447,
-#                           46.728247, 36.943103, 43.044083, 38.513995, 42.457068,
-#                           35.173401, 41.252509, 39.704018, 45.470532,
-#                           43.387721, 48.756105))
+sites <- data.frame(ID = c("Corvallis, OR", "Richland, WA", "JB Lewis-McChord, WA", "Palermo, CA",
+                           "Ephrata, WA", "Yakima Training Center, WA", "Camp Rilea, OR",
+                           "Ft Drum, NY", "West Point, NY", "Kellogg LTER, MI",
+                           "The Wilds, OH", "Duluth, MN", "Coeburn, VA", "Mountain Home AFB, ID",
+                           "Quantico MCB, VA", "Hanscom AFB, MA", "Ft Bragg, NC",
+                           "Ogden, UT", "Buckley AFB, CO", "S Portland, OR",
+                           "Sutherlin, OR", "Bellingham, WA"),
+                    x = c(-123.263, -119.283, -122.53, -121.625360, -119.555424, -120.461073,
+                          -123.934759, -75.763566, -73.962210, -85.402260, -81.733314,
+                          -92.158597, -82.466417, -115.865101, -77.311254, -71.276231,
+                          -79.083248, -112.052908, -104.752266, -122.658887,
+                          -123.315854, -122.479482),
+                    y = c(44.564, 46.275, 47.112, 39.426829, 47.318546, 46.680138,
+                          46.122867, 44.055684, 41.388456, 42.404749, 39.829447,
+                          46.728247, 36.943103, 43.044083, 38.513995, 42.457068,
+                          35.173401, 41.252509, 39.704018, 45.470532,
+                          43.387721, 48.756105))
 
-# Diorhabda
-sites <- data.frame(ID = c("TopockMarsh", "Lovelock", "GoldButte", "Delta", "BigBend"),
-                    x = c(-114.5387, -118.5950, -114.2188, -112.9576, -114.6479),
-                    y = c(34.7649, 40.04388, 36.73357, 39.14386, 35.10547))
-sites$ID <- factor(sites$ID, c("Lovelock", "Delta", "GoldButte", "BigBend", "TopockMarsh"))
+# # Diorhabda
+# sites <- data.frame(ID = c("TopockMarsh", "Lovelock", "GoldButte", "Delta", "BigBend"),
+#                     x = c(-114.5387, -118.5950, -114.2188, -112.9576, -114.6479),
+#                     y = c(34.7649, 40.04388, 36.73357, 39.14386, 35.10547))
+# sites$ID <- factor(sites$ID, c("Lovelock", "Delta", "GoldButte", "BigBend", "TopockMarsh"))
 
 
 nsim <- 7
@@ -96,79 +96,87 @@ inputdist <- data.frame(x = x, y = y) %>%
 substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
 # To get observations to fit for overwinter adults and F1 eggs, 
 # overwinter pre-oviposition period is only 50 deg days
-substages$means <- substages$means + 157
+substages$means <- substages$means + 15
 
 
-####################################
-# Weighted results by substage sizes
-# Not needed for older model with only one parameter per stage
-returnwd <- getwd()
-setwd(newname)
-
-f <-list.files()
-rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
-
-# for each sim with unique information to save
-ls <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1])
-maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,2])
-# sims <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,3])
-# sims <- gsub(pattern = ".grd", replacement = "", x = sims)
-
-# parallel backend for foreach loop
-if(.Platform$OS.type == "unix"){
-  ncores <- length(ls) * length(maps) / 2
-  registerDoMC(cores = ncores)
-}else if(.Platform$OS.type == "windows"){
-  ncores <- parallel::detectCores() / 2
-  cl <- makeCluster(ncores)
-  registerDoSNOW(cl)
-}
-
-# run inside foreach now
-# tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", "run", newname)
-# dir.create(path = tmppath, showWarnings = FALSE)
-# #sets temp directory
-# rasterOptions(tmpdir=file.path(tmppath)) 
-
-# this loop takes a lot of time
-
-system.time({
-  foreach(i = ls,
-                      .packages= "raster",
-                      .export = c("rasfiles", "substages")) %:% 
-    foreach(m = maps,
-            .packages = "raster",
-            .export = c("rasfiles", "substages")) %dopar%{
-              # .inorder = FALSE) %do%{
-              # foreach(i = ls, .packages = "raster") %dopar% {
-              tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", i, "run", m)
-              dir.create(path = tmppath, showWarnings = FALSE)
-              #sets temp directory
-              rasterOptions(tmpdir=file.path(tmppath)) 
-              
-              fs <- sort(rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)])
-              fs <- sort(fs[grep(pattern = m, x = fs, fixed = TRUE)])
-              template <- brick(fs[1])[[1]]
-              template[!is.na(template)] <- 0
-              
-              ll <- replicate(nlayers(brick(fs[1])), template)
-              blank <- brick(ll)
-              for (j in 1:length(fs)){
-                ras_weighted <- brick(fs[j]) * substages[j, 2] # weights for each substage size
-                blank <- overlay(blank, ras_weighted, fun=function(x,y) x + y)
+newdirs <- c(
+  # "GCA_NWSMALL_2014", "GCA_NWSMALL_2015", "GCA_NWSMALL_2016",
+             # "GCA_NWSMALL_2014/North", "GCA_NWSMALL_2015/North", "GCA_NWSMALL_2016/North",
+             "GCA_NWSMALL_2014/South", "GCA_NWSMALL_2015/South", "GCA_NWSMALL_2016/South",
+             "GCA_NWSMALL_2014/North_sol", "GCA_NWSMALL_2015/North_sol", "GCA_NWSMALL_2016/North_sol",
+             "GCA_NWSMALL_2014/South_sol", "GCA_NWSMALL_2015/South_sol", "GCA_NWSMALL_2016/South_sol")
+for (newname in newdirs){
+  ####################################
+  # Weighted results by substage sizes
+  # Not needed for older model with only one parameter per stage
+  returnwd <- getwd()
+  setwd(newname)
+  
+  f <-list.files()
+  rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
+  rasfiles <- rasfiles[grep(pattern = "sim", x = rasfiles, fixed = TRUE)]
+  
+  # for each sim with unique information to save
+  ls <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1])
+  maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,2])
+  # sims <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,3])
+  # sims <- gsub(pattern = ".grd", replacement = "", x = sims)
+  
+  # parallel backend for foreach loop
+  if(.Platform$OS.type == "unix"){
+    ncores <- length(ls) * length(maps) / 2
+    registerDoMC(cores = ncores)
+  }else if(.Platform$OS.type == "windows"){
+    ncores <- parallel::detectCores() - 1
+    cl <- makeCluster(ncores)
+    registerDoSNOW(cl)
+  }
+  
+  # run inside foreach now
+  # tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", "run", newname)
+  # dir.create(path = tmppath, showWarnings = FALSE)
+  # #sets temp directory
+  # rasterOptions(tmpdir=file.path(tmppath)) 
+  
+  # this loop takes a lot of time
+  
+  system.time({
+    foreach(i = ls,
+            .packages= "raster",
+            .export = c("rasfiles", "substages")) %:% 
+      foreach(m = maps,
+              .packages = "raster",
+              .export = c("rasfiles", "substages")) %dopar%{
+                # .inorder = FALSE) %do%{
+                # foreach(i = ls, .packages = "raster") %dopar% {
+                tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", i, "run", m)
+                dir.create(path = tmppath, showWarnings = FALSE)
+                #sets temp directory
+                rasterOptions(tmpdir=file.path(tmppath)) 
+                
+                fs <- sort(rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)])
+                fs <- sort(fs[grep(pattern = m, x = fs, fixed = TRUE)])
+                template <- brick(fs[1])[[1]]
+                template[!is.na(template)] <- 0
+                
+                ll <- replicate(nlayers(brick(fs[1])), template)
+                blank <- brick(ll)
+                for (j in 1:length(fs)){
+                  ras_weighted <- brick(fs[j]) * substages[j, 2] # weights for each substage size
+                  blank <- overlay(blank, ras_weighted, fun=function(x,y) x + y)
+                }
+                outras <- writeRaster(blank, filename = paste(i, m, "weighted", sep = "_"),
+                                      overwrite = TRUE)
+                removeTmpFiles(h = 0)
+                unlink(tmppath, recursive = TRUE)
+                
               }
-              outras <- writeRaster(blank, filename = paste(i, m, "weighted", sep = "_"),
-                                    overwrite = TRUE)
-              removeTmpFiles(h = 0)
-              unlink(tmppath, recursive = TRUE)
-              
-            }
-})
-
-stopCluster(cl) #WINDOWS
-setwd(returnwd)
-
-
+  })
+  
+  stopCluster(cl) #WINDOWS
+  setwd(returnwd)
+  
+}
 # # # remove non-weighted results to save disk space
 # # however, need results of each sim to model different photoperiod without total rerun
 # cleanup <- list.files()
@@ -345,6 +353,9 @@ mygrid <- data.frame(
 )
 # geofacet::grid_preview(mygrid)
 
+newname <- "GCA_NWSMALL_2016"
+gdd_file <- paste(newname, "dailygdd.grd", sep = "/")
+GDD <- brick(gdd_file)
 ######
 # Plots of lifestage time series with different photoperiod responses
 f <-list.files(path = newname, recursive = TRUE, full.names = TRUE)
@@ -422,11 +433,12 @@ pltdat2 <- tsdat %>% filter(Lifestage == "Diapause")
 
 pltdat <- bind_rows(pltdat1, pltdat2) %>% 
   filter(Lifestage %in% c("Egg", "Diapause")) %>%
+  filter(ID %in% unique(pltdat1$ID)[c(1, 3, 4, 6, 7, 20:22)]) %>% 
   mutate(Date = as.Date(DOY, origin=as.Date("2015-12-31")),
          photo_resp = paste("Photo", photo_resp, sep = "_"))
-pltdat$photo_resp <- factor(pltdat$photo_resp, 
-                            c("Photo_Lovelock", "Photo_Delta", "Photo_GoldButte",
-                              "Photo_BigBend", "Photo_TopockMarsh"))
+# pltdat$photo_resp <- factor(pltdat$photo_resp, 
+#                             c("Photo_Lovelock", "Photo_Delta", "Photo_GoldButte",
+#                               "Photo_BigBend", "Photo_TopockMarsh"))
 
 # pltdat <- tsdat %>% 
 #   filter(Lifestage %in% c("Pupa", "Diapause"))

@@ -38,8 +38,8 @@ rasterOptions(overwrite = FALSE,
 
 source('CDL_funcs.R') # load collection of functions for this model
 
-# prism_path <- "prismDL/2017"
-prism_path <- "/data/PRISM/2014"
+prism_path <- "prismDL/2014"
+# prism_path <- "/data/PRISM/2014"
 # prism_path <- "/data/PRISM/"
 
 
