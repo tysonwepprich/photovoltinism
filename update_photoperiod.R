@@ -44,8 +44,8 @@ inputdist <- data.frame(x = x, y = y) %>%
 substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
 substages$means <- substages$means + 15
 
-newdirs <- c("GCA_NWSMALL_2014", "GCA_NWSMALL_2015", "GCA_NWSMALL_2016")
-sitedirs <- "South" # c("North_sol", "South", "South_sol")
+newdirs <- c("GCA_NWSMALL_2014", "GCA_NWSMALL_2015")
+sitedirs <- "South_sol" # c("North_sol", "South", "South_sol")
 params <- expand.grid(newdirs, sitedirs)
 names(params) <- c("newname", "sitedir")
 

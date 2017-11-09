@@ -102,8 +102,8 @@ substages$means <- substages$means + 15
 newdirs <- c(
   # "GCA_NWSMALL_2014", "GCA_NWSMALL_2015", "GCA_NWSMALL_2016",
              # "GCA_NWSMALL_2014/North", "GCA_NWSMALL_2015/North", "GCA_NWSMALL_2016/North",
-             "GCA_NWSMALL_2014/South", "GCA_NWSMALL_2015/South", "GCA_NWSMALL_2016/South",
-             "GCA_NWSMALL_2014/North_sol", "GCA_NWSMALL_2015/North_sol", "GCA_NWSMALL_2016/North_sol",
+             # "GCA_NWSMALL_2014/South", "GCA_NWSMALL_2015/South", "GCA_NWSMALL_2016/South",
+             # "GCA_NWSMALL_2014/North_sol", "GCA_NWSMALL_2015/North_sol", "GCA_NWSMALL_2016/North_sol",
              "GCA_NWSMALL_2014/South_sol", "GCA_NWSMALL_2015/South_sol", "GCA_NWSMALL_2016/South_sol")
 for (newname in newdirs){
   ####################################
@@ -353,7 +353,7 @@ mygrid <- data.frame(
 )
 # geofacet::grid_preview(mygrid)
 
-newname <- "GCA_NWSMALL_2016"
+newname <- "GCA_NWSMALL_2015"
 gdd_file <- paste(newname, "dailygdd.grd", sep = "/")
 GDD <- brick(gdd_file)
 ######
@@ -435,28 +435,34 @@ pltdat <- bind_rows(pltdat1, pltdat2) %>%
   filter(Lifestage %in% c("Egg", "Diapause")) %>%
   filter(ID %in% unique(pltdat1$ID)[c(1, 3, 4, 6, 7, 20:22)]) %>% 
   mutate(Date = as.Date(DOY, origin=as.Date("2015-12-31")),
-         photo_resp = paste("Photo", photo_resp, sep = "_"))
+         photo_resp = paste("Photo", photo_resp, sep = "_")) #%>% 
+  # filter(photo_resp %in% c("Photo_North_sol", "Photo_South_sol"))
 # pltdat$photo_resp <- factor(pltdat$photo_resp, 
 #                             c("Photo_Lovelock", "Photo_Delta", "Photo_GoldButte",
 #                               "Photo_BigBend", "Photo_TopockMarsh"))
 
+pltdat$ID <- droplevels(pltdat$ID)
+pltdat$ID <- factor(pltdat$ID, levels(pltdat$ID)[c(1, 4, 8, 2, 6, 3, 7, 5)])
+
 # pltdat <- tsdat %>% 
 #   filter(Lifestage %in% c("Pupa", "Diapause"))
+theme_set(theme_bw(base_size = 10)) 
 
-plt <- ggplot(pltdat, aes(x = Date, y = Proportion, group = Lifestage, color = Lifestage)) +
+plt <- ggplot(pltdat, aes(x = Accum_GDD, y = Proportion, group = Lifestage, color = Lifestage)) +
   geom_line(size = 2) +
-  scale_x_date(date_breaks = "2 month", date_labels = "%b") +
+  # scale_x_date(date_breaks = "2 month", date_labels = "%b") +
   # geom_rect(data = subset(pltdat, site == 'Big Bend State Park'), 
   #           aes(fill = site), xmin = -Inf, xmax = Inf,
   #           ymin = -Inf, ymax = Inf, alpha = 0.2)
   # facet_geo(~ID, grid = mygrid) +
   # geom_vline(xintercept = 100) +
   # coord_cartesian(xlim = c(75, 300)) 
-  facet_grid(ID~photo_resp)
+  ggtitle(newname) +
+  facet_grid(photo_resp~ID)
 plt
 
-ggsave(paste(newname,"LifestageTSdate", ".png", sep = ""),
-       plot = plt, device = "png", width = 12, height = 8, units = "in")
+ggsave(paste(newname,"LifestageTSgdd", ".png", sep = ""),
+       plot = plt, device = "png", width = 12, height = 4, units = "in")
 
 
 # plot of daily GDD by site
@@ -477,16 +483,17 @@ pltdat$photo_resp <- factor(pltdat$photo_resp,
                             c("Photo_Lovelock", "Photo_Delta", "Photo_GoldButte",
                               "Photo_BigBend", "Photo_TopockMarsh"))
 exdat <- pltdat %>% 
-  filter(ID == "BigBend", photo_resp == "Photo_BigBend") %>% 
+  filter(ID == "S Portland, OR") %>% 
   filter(Lifestage != "Voltinism") %>% 
-  mutate(Date = as.Date(DOY, origin=as.Date("2015-12-31")))
-plt <- ggplot(exdat, aes(x = Accum_GDD, y = Proportion, group = Lifestage, color = Lifestage)) +
-  geom_line(size = 2)
-  # scale_x_date(date_breaks = "2 month", date_labels = "%b")
+  mutate(Date = as.Date(DOY, origin=as.Date("2014-12-31")))
+plt <- ggplot(exdat, aes(x = Date, y = Proportion, group = Lifestage, color = Lifestage)) +
+  geom_line(size = 2) +
+  scale_x_date(date_breaks = "2 month", date_labels = "%b") +
+    facet_grid(photo_resp~ID)
 plt
 
-ggsave(paste(newname,"SomeLSgdd", ".png", sep = ""),
-       plot = plt, device = "png", width = 8, height = 5, units = "in")
+ggsave(paste(newname,"Portland", ".png", sep = ""),
+       plot = plt, device = "png", width = 8, height = 6, units = "in")
 
 
 ######
