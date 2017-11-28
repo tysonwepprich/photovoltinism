@@ -18,7 +18,7 @@ library(foreach) # for parallelized loops
 # library(doMC) 
 library(doSNOW) # for WINDOWS
 
-region_param <- "WEST"
+region_param <- "EAST"
 
 LDT <- 10
 UDT <- 37.8

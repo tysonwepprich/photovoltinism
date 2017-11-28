@@ -190,6 +190,7 @@ assign_extent <- function(region_param = c("CONUS", "NORTHWEST", "OR", "TEST", "
                    "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612),
                    "TEST"         = extent(-124, -122.5, 44, 45),
                    "WEST"         = extent(-125.14, -109, 37, 49.1),
-                   "SOUTHWEST"    = extent(-120.17, -108.25, 31.5, 42.3))
+                   "SOUTHWEST"    = extent(-120.17, -108.25, 31.5, 42.3),
+                   "EAST"         = extent(-93, -71, 35, 47))
   return(REGION)
 }
