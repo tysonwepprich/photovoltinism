@@ -20,28 +20,13 @@ source('CDL_funcs.R') # load collection of functions for this model
 
 # prism_path <- "prismDL/2014"
 
-sites <- data.frame(ID = c("Corvallis, OR", "Richland, WA", "JB Lewis-McChord, WA", "Palermo, CA",
-                           "Ephrata, WA", "Yakima Training Center, WA", "Camp Rilea, OR",
-                           "Ft Drum, NY", "West Point, NY", "Kellogg LTER, MI",
-                           "The Wilds, OH", "Duluth, MN", "Coeburn, VA", "Mountain Home AFB, ID",
-                           "Quantico MCB, VA", "Hanscom AFB, MA", "Ft Bragg, NC",
-                           "Ogden, UT", "Buckley AFB, CO", "S Portland, OR",
-                           "Sutherlin, OR", "Bellingham, WA"),
-                    x = c(-123.263, -119.283, -122.53, -121.625360, -119.555424, -120.461073,
-                          -123.934759, -75.763566, -73.962210, -85.402260, -81.733314,
-                          -92.158597, -82.466417, -115.865101, -77.311254, -71.276231,
-                          -79.083248, -112.052908, -104.752266, -122.658887,
-                          -123.315854, -122.479482),
-                    y = c(44.564, 46.275, 47.112, 39.426829, 47.318546, 46.680138,
-                          46.122867, 44.055684, 41.388456, 42.404749, 39.829447,
-                          46.728247, 36.943103, 43.044083, 38.513995, 42.457068,
-                          35.173401, 41.252509, 39.704018, 45.470532,
-                          43.387721, 48.756105))
+sites <- read.csv("data/GCA_modeling_sites.csv", header = TRUE) %>% 
+  mutate(ID = as.character(ID)) %>% 
+  arrange(ID)
 
-sites <- sites[c(1, 3, 4, 6, 7, 20, 21, 22), ] %>% droplevels.data.frame()
-  
-
-
+# west_sites <- sites[c(1, 3, 4, 6, 7, 20, 21, 22), ] %>% droplevels.data.frame()
+# east_sites <- 
+# can_sites <- 
 #####
 #input parameters
 #####
@@ -150,35 +135,45 @@ SitePhoto <- function(sites, doy, perc_twilight){
 
 #Run model
 ############################
-site_gdd <- extract(GDD, sites[, c("x", "y")])
-site_gdd <- data.frame(site_gdd)
-site_gdd$ID <- sites$ID
+gdd_year <- 2016
+gdd_files <- c("dailygdd_2016_NW_SMALL.grd", "dailygdd_2016_EAST.grd")
 
-site_gdd_tidy <- site_gdd %>% 
+site_gdd1 <- extract(brick(gdd_files[1]), sites[, c("x", "y")])
+site_gdd1 <- data.frame(site_gdd1)
+site_gdd1$ID <- sites$ID
+site_gdd2 <- extract(brick(gdd_files[2]), sites[, c("x", "y")])
+site_gdd2 <- data.frame(site_gdd2)
+site_gdd2$ID <- sites$ID
+
+site_gdd_tidy1 <- site_gdd1 %>% 
   group_by(ID) %>% 
   tidyr::gather(key = "DOY", value = "GDD", layer.1:layer.365) %>% 
   ungroup() %>% 
-  dplyr::mutate(DOY = as.numeric(gsub(pattern = "layer.", replacement = "", x = .$DOY)))
+  dplyr::mutate(DOY = as.numeric(gsub(pattern = "layer.", replacement = "", x = .$DOY))) %>% 
+  filter(complete.cases(.))
+site_gdd_tidy2 <- site_gdd2 %>% 
+  group_by(ID) %>% 
+  tidyr::gather(key = "DOY", value = "GDD", layer.1:layer.365) %>% 
+  ungroup() %>% 
+  dplyr::mutate(DOY = as.numeric(gsub(pattern = "layer.", replacement = "", x = .$DOY))) %>% 
+  filter(complete.cases(.))
+site_gdd_tidy <- bind_rows(site_gdd_tidy1, site_gdd_tidy2) %>% droplevels.data.frame()
+  
 
 if (exists("layer.366", site_gdd_tidy)){
   site_gdd_tidy$layer.366 <- NULL
 }
-#   
-# for (sim in 1:nsim){
-#   
-#   dds <- site_gdd_tidy %>% 
-#     group_by(ID) %>% 
-#     arrange(ID, DOY) %>% 
-#     mutate(AccumDD = cumsum(GDD),
-#            Lifestage = "OW")
-#   
-#   dds <- dds %>% 
-#     mutate(Lifestage = ifelse(AccumDD >= substages$means[sim],
-#                               "E", "OW")) %>% 
-#     mutate(LS_DD = ifelse(Lifestage == lag(Lifestage, 1),
-#                           ))
-#   
-# }
+
+# Add Canadian sites from Daymet
+can_gdd <- readRDS("data/gdd_canada_sites.RDS") %>% 
+  filter(Year == gdd_year, DOY != 366) %>% 
+  dplyr::select(-Year) %>% 
+  mutate(ID = as.character(ID))
+
+site_gdd_tidy <- bind_rows(site_gdd_tidy, can_gdd) %>% 
+  arrange(DOY, ID)
+
+
 
 
 results <- list()
