@@ -23,6 +23,9 @@ source('CDL_funcs.R') # load collection of functions for this model
 sites <- read.csv("data/GCA_modeling_sites.csv", header = TRUE) %>% 
   mutate(ID = as.character(ID)) %>% 
   arrange(ID)
+# sites <- sites[c(5,9), ]
+sites <- sites[-c(2, 14, 18, 20, 27), ]
+
 
 # west_sites <- sites[c(1, 3, 4, 6, 7, 20, 21, 22), ] %>% droplevels.data.frame()
 # east_sites <- 
@@ -44,8 +47,8 @@ CDL_log    <- 1 # if 1, model CDL from logistic regression results
 owstage    <- "OA"
 # Logistic regression photoperiod
 # from Fritzi's lab data, two different populations
-coefs <- c(-56.9745, 3.5101) # Northern
-# coefs <- c(-60.3523, 3.8888) # Southern
+# coefs <- c(-56.9745, 3.5101) # Northern
+coefs <- c(-60.3523, 3.8888) # Southern
 # Degree day thresholds
 # LDT = lower development threshold, temp at which growth = 0 (using PRISM tmean)
 eggLDT     <- 10
@@ -96,16 +99,16 @@ substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
 # substages$means <- substages$means
 
 
-template <- raster(files[1])
-template <- crop(raster(files[1]), REGION)
-template[!is.na(template)] <- 0
+# template <- raster(files[1])
+# template <- crop(raster(files[1]), REGION)
+# template[!is.na(template)] <- 0
 
 
-# preload PRISM data into RasterBrick
-if (gdd_data == "load"){
-  GDD <- brick(gdd_file)
-  DT_same <- TRUE
-}
+# # preload PRISM data into RasterBrick
+# if (gdd_data == "load"){
+#   GDD <- brick(gdd_file)
+#   DT_same <- TRUE
+# }
 
 if (vary_indiv == 1){
   eggDD = eggDD_mu
@@ -133,10 +136,12 @@ SitePhoto <- function(sites, doy, perc_twilight){
   hours <- photoperiod(sites$y, doy, p)
 }
 
-#Run model
-############################
-gdd_year <- 2016
-gdd_files <- c("dailygdd_2016_NW_SMALL.grd", "dailygdd_2016_EAST.grd")
+
+#####
+#Bring together West, East, Canadian GDD
+#####
+gdd_year <- 2015
+gdd_files <- c("dailygdd_2015_NW_SMALL.grd", "dailygdd_2015_EAST.grd")
 
 site_gdd1 <- extract(brick(gdd_files[1]), sites[, c("x", "y")])
 site_gdd1 <- data.frame(site_gdd1)
@@ -171,11 +176,23 @@ can_gdd <- readRDS("data/gdd_canada_sites.RDS") %>%
   mutate(ID = as.character(ID))
 
 site_gdd_tidy <- bind_rows(site_gdd_tidy, can_gdd) %>% 
-  arrange(DOY, ID)
+  filter(ID %in% sites$ID) %>% 
+  arrange(DOY, ID) %>% 
+  group_by(ID) %>% 
+  mutate(AccumDD = cumsum(GDD)) %>% 
+  ungroup()
+  
+#####
+# Add transfer to common garden
+#####
+common_garden <- 0
+transfer_DD <- 120
+transfer_site <- "Corvallis, OR"
 
 
-
-
+#####
+# Run model
+#####
 results <- list()
 # old nested foreach loop
 for(sim in 1:nsim){
@@ -191,6 +208,8 @@ for(sim in 1:nsim){
   
   template <- rep(0, nrow(sites)) 
   DDaccum <- template
+  TotalGDD <- template
+  transferred <- template # common garden feature, start in own site
   Lifestage <- rep(-1, nrow(sites))  # Need for OW designated as stage -1
   NumGen <- template
   #Lifestage: [0] = egg, [1] = larvae, [2] = pupae, [3] = adult
@@ -219,17 +238,35 @@ for(sim in 1:nsim){
     print(d)
     index <- which(sublist == d)
 
-    
-    tmpGDD <- site_gdd_tidy %>% 
-      filter(DOY == d) %>% 
-      dplyr::select(GDD) %>% 
-      unlist()
-    
-    # photoperiod for this day across raster
-    if (model_CDL == 1){
-      doy <- d
-      photo <- SitePhoto(sites, doy, perc_twilight = 25)
-    }
+    # Common Garden transfer
+    # all sites
+      tmpGDD <- site_gdd_tidy %>% 
+        filter(DOY == d) %>% 
+        dplyr::select(GDD) %>% 
+        unlist()
+      tmpGDD[which(is.na(tmpGDD))] <- 0 # in case of missing GDD (could interpolate)
+      # transfer site
+      tmpGDDtr <- site_gdd_tidy %>% 
+        filter(DOY == d, ID == transfer_site) %>% 
+        dplyr::select(GDD) %>% 
+        unlist()
+      tmpGDDtr[which(is.na(tmpGDDtr))] <- 0
+      tmpGDD <- Cond(transferred == 1, tmpGDDtr, tmpGDD)
+      
+      TotalGDD <- TotalGDD + tmpGDD
+
+      # photoperiod for this day across raster
+      if (model_CDL == 1){
+        doy <- d
+        photo <- SitePhoto(sites, doy, perc_twilight = 25)
+        phototr <- SitePhoto(sites[which(sites$ID == transfer_site), ], doy, perc_twilight = 25)
+        photo <- Cond(transferred == 1, phototr, photo)
+      }
+      
+      # transferred if threshold reached, otherwise no transfer
+      if(common_garden == 1){
+        transferred <- Cond(TotalGDD >= transfer_DD, 1, 0)
+      }
     
     #### Loop through Stages; order of stages now read from SPP param file ####
     
@@ -240,7 +277,7 @@ for(sim in 1:nsim){
         if (i == "OE") { 
           dd0 <- dd0tmp * LSOW0 
         } else if (i == "E") { 
-          dd0 <- dd0tmp[[1]] * LS0 
+          dd0 <- dd0tmp * LS0 
         }
         DDaccum <- DDaccum + dd0
         
@@ -317,17 +354,14 @@ for(sim in 1:nsim){
           DDaccum <- Cond(progressOW3 == 1,(DDaccum - OWadultDD) * LSOW3, DDaccum)
           progressOW3[is.na(progressOW3)] <- template[is.na(progressOW3)]
           Lifestage <- Cond(LSOW3 == 1 & progressOW3 == 1, 0, Lifestage)
-          #Increment NumGen + 1
-          NumGen <- NumGen + progressOW3
-          #writeRaster(NumGen,paste("NumGen",d,sep=""), format="GTiff",overwrite=TRUE)
+
         } else if (i == "A") {
           progress3 <- (DDaccum * LS3) >= adultDD
           #Reset the DDaccum cells to zero for cells that progressed to next lifestage
           DDaccum <- Cond(progress3 == 1,(DDaccum - adultDD) * LS3, DDaccum)
           #Remove masking effect from progress counter so it doesn't perpetuate through NumGen raster
           Lifestage <- Cond(LS3 == 1 & progress3 == 1,0, Lifestage)
-          #Increment NumGen + 1
-          NumGen <- NumGen + progress3
+
         }
 
         ####  MAIN STEPS FOR END OF EACH DAY ####
@@ -387,7 +421,6 @@ for(sim in 1:nsim){
 
 allresults <- bind_rows(results)
 
-
 weighted_lifestage <- substages %>% 
   mutate(sim = 1:nrow(substages)) %>% 
   right_join(allresults) %>% 
@@ -406,25 +439,70 @@ allresults2 <- weighted_lifestage %>%
   ungroup() %>% 
   mutate(Lifestage = as.factor(Lifestage)) %>% 
   tidyr::complete(DOY, ID, Lifestage, fill = list(Relprop = 0)) %>% 
-  left_join(site_gdd_tidy) %>% 
-  group_by(ID, Lifestage) %>% 
-  arrange(DOY) %>% 
-  mutate(AccumDD = cumsum(GDD))
+  left_join(site_gdd_tidy)
 
 allresults <- allresults2 %>% 
   left_join(weighted_diapause) %>% 
-  mutate(Relprop = Relprop * (1 - Prop_diapause))
+  mutate(Relprop = Relprop * (1 - Prop_diapause),
+         Date = as.Date(DOY, origin=as.Date(paste0((gdd_year - 1), "-12-31"))))
 diap <- weighted_diapause %>%
   ungroup() %>%
-  left_join(allresults[, c("ID", "DOY", "AccumDD")]) %>%
+  left_join(allresults[, c("ID", "DOY", "AccumDD", "Date")]) %>%
   distinct()
 
+# transfer_date <- site_gdd_tidy %>%
+#   group_by(ID) %>%
+#   filter(AccumDD >= transfer_DD) %>%
+#   arrange(DOY) %>%
+#   filter(1:n() == 1) %>%
+#   mutate(Date = as.Date(DOY, origin=as.Date(paste0((gdd_year - 1), "-12-31"))))
+
+levels(allresults$Lifestage) <- c("Overwinter", "Egg", "Larva", "Pupa", "Adult")
+
 # plot to check results
-plt <- ggplot(allresults, aes(x = AccumDD, y = Relprop, group = Lifestage, color = Lifestage)) +
+plt <- ggplot(allresults, aes(x = Date, y = Relprop, group = Lifestage, color = Lifestage)) +
   geom_line() +
-  facet_wrap(~ID, ncol = 2) +
+  scale_x_date(date_breaks = "2 month", date_labels = "%b") +
+  facet_wrap(~ID, ncol = 5) +
+  ggtitle("No transfer, 2015, Southern CDL") +
+  theme_bw() +  
+  geom_line(data = diap, aes(x = Date, y = Prop_diapause, group = ID, color = "diapause")) 
+  # geom_vline(data = transfer_date, aes(xintercept = Date))
+plt
+
+
+ggsave("GCAsites_notransfer_2015_SCDL.png",
+       plot = plt, device = "png", width = 12, height = 8, units = "in")
+
+
+plt <- ggplot(site_gdd_tidy, aes(x = DOY, y = GDD)) +
+  geom_point() +
+  facet_wrap(~ID, ncol = 5) +
   theme_bw()
-plt +  geom_line(data = diap, aes(x = AccumDD, y = Prop_diapause, group = ID, color = "diapause"))
+plt
+
+plt <- ggplot(test2, aes(x = Date, y = Relprop, group = Lifestage, color = Lifestage)) +
+  geom_line() +
+  # geom_vline(xintercept = 120) +
+  # scale_x_date(date_breaks = "2 month", date_labels = "%b") +
+  # facet_wrap(~ID, ncol = 5) +
+  theme_bw()
+plt
 
 
+test <- left_join(allresults, site_gdd_tidy)
+plt <- ggplot(test, aes(x = AccumDD, y = Lifestage)) +
+  geom_line() +
+  facet_wrap(~ID, ncol = 5) +
+  theme_bw()
+plt
 
+justgdd <- test %>% 
+  dplyr::select(-Lifestage, sim, Diap_perc) %>% 
+  distinct()
+plt <- ggplot(justgdd, aes(x = DOY, y = AccumDD)) +
+  geom_point() +
+  facet_wrap(~ID, ncol = 5) +
+  geom_hline(yintercept = 100) +
+  theme_bw()
+plt

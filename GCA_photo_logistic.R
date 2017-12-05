@@ -2,7 +2,7 @@
 
 # setwd('C:\\R\\Aphalara diapause')
 
-data=read.csv('combined 13_15.csv')
+data=read.csv('data/combined 13_15.csv')
 str(data)
 #data=subset(data1,Year==2014)
 
