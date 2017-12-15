@@ -23,8 +23,8 @@ source('CDL_funcs.R') # load collection of functions for this model
 sites <- read.csv("data/GCA_modeling_sites.csv", header = TRUE) %>% 
   mutate(ID = as.character(ID)) %>% 
   arrange(ID)
-# sites <- sites[c(5,9), ]
-sites <- sites[-c(2, 14, 18, 20, 27), ]
+sites <- sites[c(5, 17, 21, 26), ]
+# sites <- sites[-c(2, 14, 18, 20, 27), ]
 
 
 # west_sites <- sites[c(1, 3, 4, 6, 7, 20, 21, 22), ] %>% droplevels.data.frame()
@@ -459,11 +459,13 @@ diap <- weighted_diapause %>%
 
 levels(allresults$Lifestage) <- c("Overwinter", "Egg", "Larva", "Pupa", "Adult")
 
+theme_set(theme_bw(base_size = 20)) 
+
 # plot to check results
 plt <- ggplot(allresults, aes(x = Date, y = Relprop, group = Lifestage, color = Lifestage)) +
   geom_line() +
   scale_x_date(date_breaks = "2 month", date_labels = "%b") +
-  facet_wrap(~ID, ncol = 5) +
+  facet_wrap(~ID, ncol = 2) +
   ggtitle("No transfer, 2015, Southern CDL") +
   theme_bw() +  
   geom_line(data = diap, aes(x = Date, y = Prop_diapause, group = ID, color = "diapause")) 
@@ -471,8 +473,8 @@ plt <- ggplot(allresults, aes(x = Date, y = Relprop, group = Lifestage, color = 
 plt
 
 
-ggsave("GCAsites_notransfer_2015_SCDL.png",
-       plot = plt, device = "png", width = 12, height = 8, units = "in")
+ggsave("GCAsites_notransfer_2015_SCDL_subset.png",
+       plot = plt, device = "png", width = 8, height = 6, units = "in")
 
 
 plt <- ggplot(site_gdd_tidy, aes(x = DOY, y = GDD)) +

@@ -109,11 +109,116 @@ stopCluster(cl) #WINDOWS
 
 
 
+# Frost dates by year
+# Treated like degree-days beyond a threhold, accumulating up to 10 frost-degree-days per day
+
+
+region_param <- "NW_SMALL"
+frost_threshold <- 0
+frost_max <- -10 #max damage per day
+
+# base_path <- "/data/PRISM/"
+base_path <- "prismDL"
+
+years <- c(2015:2017)
+# LINUX
+# ncores <- length(years)
+# registerDoMC(cores = ncores)
+
+# WINDOWS
+ncores <- length(years)
+cl <- makeCluster(ncores)
+registerDoSNOW(cl)
+
+foreach(yr = years, .packages= "raster")   %dopar% {
+  prism_path <- paste(base_path, yr, sep = "/")
+  
+  #Search pattern for PRISM daily temperature grids. Load them for processing.
+  pattern = paste("(PRISM_tmin_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
+  tminfiles <- list.files(path = prism_path, pattern=pattern, 
+                          all.files=FALSE, full.names=TRUE, recursive = TRUE)
+  dates <- regexpr(pattern = "[0-9]{8}", text = tminfiles)
+  fileorder <- order(regmatches(tminfiles, dates))
+  tminfiles <- tminfiles[fileorder]
+  r <- raster(tminfiles[1])
+  tminstack <- stack(r)
+  tminstack@layers <- sapply(tminfiles, function(x) { r@file@name=x; r } ) 
+  
+  pattern = paste("(PRISM_tmax_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
+  tmaxfiles <- list.files(path = prism_path, pattern=pattern, 
+                          all.files=FALSE, full.names=TRUE, recursive = TRUE)
+  dates <- regexpr(pattern = "[0-9]{8}", text = tmaxfiles)
+  fileorder <- order(regmatches(tmaxfiles, dates))
+  tmaxfiles <- tmaxfiles[fileorder]
+  r <- raster(tmaxfiles[1])
+  tmaxstack <- stack(r)
+  tmaxstack@layers <- sapply(tmaxfiles, function(x) { r@file@name=x; r } ) 
+  
+  
+  REGION <- assign_extent(region_param)
+  
+  tminstack <- crop(tminstack, REGION)
+  tmaxstack <- crop(tmaxstack, REGION)
+  
+  
+  # system.time({
+  GDD <- overlay(x = tmaxstack, y = tminstack, 
+                 fun = function(xx, yy){
+                   UDT <- -frost_max
+                   LDT <- -frost_threshold
+                   x <- -1 * yy
+                   y <- -1 * xx
+                   Tmp1=6*((x-LDT)*(x-LDT))/(x-y)
+                   Tmp2=6*((x-UDT)*(x-UDT))/(x-y)
+                   out <- Cond(x < LDT,0,
+                        Cond(y >= UDT,UDT-LDT,
+                             Cond((x < UDT) & (y <= LDT), Tmp1/12,
+                                  Cond((y <= LDT) & (x >= UDT), (Tmp1-Tmp2)/12,
+                                       Cond((y > LDT) & (x >= UDT), 6*(x+y-2*LDT)/12 - (Tmp2/12),
+                                            Cond((y > LDT) & (x < UDT), 6*(x+y-2*LDT)/12,0))))))
+                   return(out)
+                 },
+                 filename = paste("daily_frost", yr, region_param, sep = "_"),
+                 recycle = FALSE,
+                 overwrite = TRUE)
+  # })
+  
+} # end foreach loop
+stopCluster(cl) #WINDOWS
+
+# 
+years <- c(2014:2016)
+outlist <- list()
+for (yr in years){
+  frost <- extract(brick(paste0("daily_frost_", yr, "_NW_SMALL.grd")), sites[, c("x", "y")])
+  frost <- cbind(sites, frost)
+  frost <- frost %>% 
+    tidyr::gather(key = "DOY", value = "Frost", layer.1:layer.365) %>% 
+    dplyr::mutate(DOY = as.numeric(gsub(pattern = "layer.", replacement = "", x = .$DOY))) %>% 
+    group_by(ID) %>% 
+    arrange(DOY) %>% 
+    dplyr::mutate(WeeklyFrost = zoo::rollsum(Frost, k = 7, fill = NA),
+                  Year = yr)
+  outlist[[length(outlist)+1]] <- frost
+}
+df <- bind_rows(outlist) %>% 
+  filter(ID %in% c("Bellingham, WA", "Corvallis, OR", "Yakima TC, WA"))
+
+plt <- ggplot(df, aes(x = DOY, y = Frost, group = as.factor(Year), color = as.factor(Year)))+
+  geom_line(size = 1.5)+
+  theme_bw() +
+  facet_wrap(~ID, ncol = 1) +
+  geom_line()
+plt
+
+
+
+
 
 rasfiles <- list.files(pattern = "dailygdd")
 rasfiles <- rasfiles[grep(pattern = ".grd", x = rasfiles, fixed = TRUE)]
 
-# average GDD per day/raster
+# average GDD per day/raster 
 # account for leap years
 
 # overlay? calc? mean?
