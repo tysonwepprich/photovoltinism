@@ -34,8 +34,8 @@ rasterOptions(overwrite = FALSE,
 
 source('CDL_funcs.R') # load collection of functions for this model
 
-prism_path <- "prismDL/2014"
-# prism_path <- "/data/PRISM/2014"
+# prism_path <- "prismDL/2014"
+prism_path <- "/data/PRISM/2015"
 # prism_path <- "/data/PRISM/"
 
 
@@ -57,8 +57,9 @@ CDL_log    <- 1 # if 1, model CDL from logistic regression results
 owstage    <- "OA"
 # Logistic regression photoperiod
 # from Fritzi's lab data, two different populations
-coefs <- c(-56.9745, 3.5101) # Northern
-# coefs <- c(-60.3523, 3.8888) # Southern
+# response is percent diapause
+coefs <- c(90.0916, -6.115054) # Northern
+# coefs <- c(86.33544, -6.115054) # Southern
 # Degree day thresholds
 # LDT = lower development threshold, temp at which growth = 0 (using PRISM tmean)
 eggLDT     <- 6.1
@@ -103,7 +104,7 @@ plot(x, y)
 inputdist <- data.frame(x = x, y = y) %>% 
   arrange(x) %>% 
   mutate(CDF = cumsum(y/sum(y)))
-substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
+substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
 substages
 
 # try to run sims in parallel and also split map if large REGION
