@@ -28,11 +28,11 @@ library(gridExtra)
 library(grid)
 # results directory
 # newname <- "GCA_WEST_SCDL_2017"
-newname <- "DCA_SW_2016"
-
+# newname <- "DCA_SW_2016"
+newname <- "APHA_CONUS_NCDL_GDD"
 
 source('CDL_funcs.R')
-region_param <- "NW_SMALL"
+region_param <- "CONUS"
 gdd_file <- "dailygdd.grd"
 
 REGION <- assign_extent(region_param = region_param)
@@ -75,16 +75,6 @@ sites <- data.frame(ID = c("Corvallis, OR", "Richland, WA", "JB Lewis-McChord, W
 
 
 nsim <- 7
-# # Take empirical distribution and calculate substages
-# # OW oviposition distribution
-# eggdist <- dbeta(x = seq(0, 1, length.out = 1000), 
-#                  shape1 = 3.888677, shape2 = 2.174208)
-# inputdist <- data.frame(x = seq(59.6, 223.3677, length.out = 1000),
-#                         y = eggdist)
-# inputdist$CDF <- cumsum(inputdist$y) / sum(inputdist$y, na.rm = TRUE)
-# 
-# substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
-
 
 # Try 2 with skewed t
 arg1 = list(mu = 97.94, sigma2 = 2241.7, shape = 3.92, nu = 9.57)
@@ -97,6 +87,19 @@ substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
 # To get observations to fit for overwinter adults and F1 eggs, 
 # overwinter pre-oviposition period is only 50 deg days
 substages$means <- substages$means + 15
+
+
+# APHALARA SUBSTAGES
+
+# skewed t ballpark estimation from Len's OV percentiles
+arg1 = list(mu = 250, sigma2 = 25000, shape = 3, nu = 10)
+x = seq(150, 950, length.out = 1000)
+y = mixsmsn:::dt.ls(x, loc = arg1$mu, sigma2 = arg1$sigma2, shape = arg1$shape, nu = arg1$nu)
+plot(x, y)
+inputdist <- data.frame(x = x, y = y) %>% 
+  arrange(x) %>% 
+  mutate(CDF = cumsum(y/sum(y)))
+substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
 
 
 newdirs <- c(
@@ -119,8 +122,8 @@ for (newname in newdirs){
   # for each sim with unique information to save
   ls <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1])
   maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,2])
-  # sims <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,3])
-  # sims <- gsub(pattern = ".grd", replacement = "", x = sims)
+  sims <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,3])
+  sims <- gsub(pattern = ".grd", replacement = "", x = sims)
   
   # parallel backend for foreach loop
   if(.Platform$OS.type == "unix"){
@@ -220,18 +223,19 @@ setwd(returnwd)
 #####################
 # quick plots of results
 
-res <- brick(paste(newname, "/", "LS2_001_sim1.grd", sep = ""))
+res <- brick(paste(newname, "/", "LS_001_si.grd", sep = ""))
 res <- brick(paste(newname, "/", "NumGen_001_sim7.grd", sep = ""))
 NAvalue(res) <- 200
 
-res <- brick(paste(newname, "/", "LS4_001_weighted.grd", sep = ""))
-res <- brick(paste(newname, "/", "NumGen_001_weighted.grd", sep = ""))
+res <- brick(paste(newname, "/", "LS4_001_sim4.grd", sep = ""))
+res <- brick(paste(newname, "/", "NumGen_002_weighted.grd", sep = ""))
 
 # res <- crop(res, extent(-125.1,-103.8,40.6,49.2)) #NORTHWEST
 # res <- crop(res, extent(-124.7294, -116.2949, 41.7150, 46.4612)) #OREGON
+plot(res[[365]])
 plot(res[[seq(100, 360, 50)]])
-plot(res[[seq(150, 250, 20)]])
-plot(res[[seq(180, 220, 5)]])
+plot(res[[seq(200, 300, 20)]])
+plot(res[[seq(180, 280, 20)]])
 ################
 
 # diapause/numgen time series
@@ -239,7 +243,7 @@ plot(res[[seq(180, 220, 5)]])
 # plot CDL as it moves through time and space
 
 res <- brick(gdd_file)
-res <- brick(paste(newname, "/", "LS4_weighted.grd", sep = ""))
+res <- brick(paste(newname, "/", "LS4_001_weighted.grd", sep = ""))
 # 
 # test <- vector()
 # gdd <- vector()
@@ -275,8 +279,7 @@ df2 <- df1 %>%
 
 
 logit <- function(p){log(p/(1-p))}
-# CDL <- (logit(.5) - -56.9745)/3.5101 #Northern
-CDL <- (logit(.5) - -60.3523)/3.8888 #Southern
+CDL <- (logit(.5) - 90.092)/-6.115 #Northern
 FindApproxLat4CDL <- function(ras, doy, cdl, degtwil){
   ys <- seq(extent(ras)@ymin, extent(ras)@ymax, .01)
   hours <- photoperiod(lat = ys, doy = doy, p = degtwil)

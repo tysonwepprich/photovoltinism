@@ -32,20 +32,36 @@ if(.Platform$OS.type == "unix"){
 # NEED SEPARATE SUBSTAGE SIMS I THINK
 
 source('CDL_funcs.R')
-region_param <- "NW_SMALL"
+region_param <- "CONUS"
 REGION <- assign_extent(region_param = region_param)
+nsim <- 7
+#####
 # Substages with skewed t
-arg1 = list(mu = 97.94, sigma2 = 2241.7, shape = 3.92, nu = 9.57)
-x = seq(50, 350, length.out = 1000)
+# # GCA
+# arg1 = list(mu = 97.94, sigma2 = 2241.7, shape = 3.92, nu = 9.57)
+# x = seq(50, 350, length.out = 1000)
+# y = mixsmsn:::dt.ls(x, loc = arg1$mu, sigma2 = arg1$sigma2, shape = arg1$shape, nu = arg1$nu)
+# inputdist <- data.frame(x = x, y = y) %>% 
+#   arrange(x) %>% 
+#   mutate(CDF = cumsum(y/sum(y)))
+# substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
+# substages$means <- substages$means + 15
+
+#APHA
+# skewed t ballpark estimation from Len's OV percentiles
+arg1 = list(mu = 250, sigma2 = 25000, shape = 3, nu = 10)
+x = seq(150, 950, length.out = 1000)
 y = mixsmsn:::dt.ls(x, loc = arg1$mu, sigma2 = arg1$sigma2, shape = arg1$shape, nu = arg1$nu)
+plot(x, y)
 inputdist <- data.frame(x = x, y = y) %>% 
   arrange(x) %>% 
   mutate(CDF = cumsum(y/sum(y)))
-substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
-substages$means <- substages$means + 15
+substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
 
-newdirs <- c("GCA_NWSMALL_2014", "GCA_NWSMALL_2015")
-sitedirs <- "South_sol" # c("North_sol", "South", "South_sol")
+#####
+
+newdirs <- "APHA_CONUS_2014_GDD"  # c("GCA_NWSMALL_2014", "GCA_NWSMALL_2015")
+sitedirs <- "South" # c("North_sol", "South", "South_sol")
 params <- expand.grid(newdirs, sitedirs)
 names(params) <- c("newname", "sitedir")
 
@@ -54,8 +70,13 @@ for (n in 1:nrow(params)){
   newname <- as.character(params$newname[n])
   sitedir <- as.character(params$sitedir[n])
   coefs <- switch(substring(sitedir, 1, 1),
-                  "N" = c(-56.9745, 3.5101),
-                  "S" = c(-60.3523, 3.8888))
+                  #APHA
+                  "N" = c(90.0916, -6.115054),
+                  "S" =  c(86.33544, -6.115054))
+                  # GCA
+                  # "N" = c(-56.9745, 3.5101),
+                  # "S" = c(-60.3523, 3.8888))
+  
   if(length(grep(pattern = "sol", x = sitedir, fixed = TRUE)) == 1){
     solstice <- "after"
   }else{

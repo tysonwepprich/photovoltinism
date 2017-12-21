@@ -1,0 +1,7 @@
+Sketch of workflow
+
+- Run (GCA/APHA/DCA)_tyson.R for one year's PRISM data, takes about an hour for CONUS
+  - Adjust substages, region, year, photoperiod (although this is fast to redo)
+- Rerun model photoperiod responses without redoing all daily GDD iterations (update_photoperiod.R)
+- Add sims (discrete substage sizes) together for weighted rasters for plotting (modelPlots.R)
+- Mosaic maps together if CONUS (modelPlots.R), only for weighted rasters because this takes a while 

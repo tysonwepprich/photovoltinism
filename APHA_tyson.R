@@ -35,7 +35,7 @@ rasterOptions(overwrite = FALSE,
 source('CDL_funcs.R') # load collection of functions for this model
 
 # prism_path <- "prismDL/2014"
-prism_path <- "/data/PRISM/2015"
+prism_path <- "/data/PRISM/2014"
 # prism_path <- "/data/PRISM/"
 
 
@@ -55,11 +55,14 @@ CDL_mu        <- 16.23 # 15.52
 model_CDL  <- 1 # if 1, model photoperiod decision
 CDL_log    <- 1 # if 1, model CDL from logistic regression results
 owstage    <- "OA"
+
+
 # Logistic regression photoperiod
 # from Fritzi's lab data, two different populations
 # response is percent diapause
 coefs <- c(90.0916, -6.115054) # Northern
 # coefs <- c(86.33544, -6.115054) # Southern
+
 # Degree day thresholds
 # LDT = lower development threshold, temp at which growth = 0 (using PRISM tmean)
 eggLDT     <- 6.1
@@ -75,8 +78,8 @@ eggDD_mu = 154
 larvaeDD_mu = 454
 adultDD_mu = 76 #time to oviposition
 # GDD data and calculation
-gdd_data <- "calculate" # c("load", "calculate")
-# gdd_file <- "dailygdd_2017_WEST.grd"
+gdd_data <- "load" # c("load", "calculate")
+gdd_file <- "dailygdd.grd"
 calctype   <-"triangle"
 # introducing individual variation, tracked with simulation for each substage
 vary_indiv <- 1 # turn on indiv. variation
@@ -97,8 +100,8 @@ nday <- length(start_doy:end_doy)
 # OW oviposition distribution
 
 # skewed t ballpark estimation from Len's OV percentiles
-arg1 = list(mu = 250, sigma2 = 25000, shape = 3, nu = 10)
-x = seq(150, 950, length.out = 1000)
+arg1 = list(mu = 200, sigma2 = 25000, shape = 3, nu = 10)
+x = seq(100, 800, length.out = 1000)
 y = mixsmsn:::dt.ls(x, loc = arg1$mu, sigma2 = arg1$sigma2, shape = arg1$shape, nu = arg1$nu)
 plot(x, y)
 inputdist <- data.frame(x = x, y = y) %>% 
@@ -106,6 +109,11 @@ inputdist <- data.frame(x = x, y = y) %>%
   mutate(CDF = cumsum(y/sum(y)))
 substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
 substages
+
+# emergence by photoperiod instead of GDD alone
+# start at DOY 105 (April 15) photoperiod for Inunaki Pass, Kyushu (33.675 lat)
+emerg_photo <- photoperiod(33.675, doy = 105, 6)
+
 
 # try to run sims in parallel and also split map if large REGION
 if (region_param == "CONUS"){
@@ -182,8 +190,8 @@ if (gdd_data == "calculate"){
   
   
   # if all thresholds same across lifestages, save time by calculated DD now
-  if (isTRUE(all.equal(eggLDT, larvaeLDT, pupaeLDT, adultLDT)) &
-      isTRUE(all.equal(eggUDT, larvaeUDT, pupaeUDT, adultUDT))){
+  if (isTRUE(all.equal(eggLDT, larvaeLDT, adultLDT)) &
+      isTRUE(all.equal(eggUDT, larvaeUDT, adultUDT))){
     
     # load tmin/tmax, crop, calculate gdd for all days
     pattern = paste("(PRISM_tmin_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
@@ -255,14 +263,14 @@ if (vary_indiv == 1){
   cdl_b0 <- coefs[1]
   cdl_b1 <- coefs[2]
   # CDL <- CDL_mu
-  params <- data.frame(eggDD, larvaeDD, pupDD, adultDD, OWadultDD, cdl_b0, cdl_b1)
+  params <- data.frame(eggDD, larvaeDD, adultDD, OWadultDD, cdl_b0, cdl_b1)
 }else{ # doesn't make sense to do this with foreach if no variation, though!
   eggDD = eggDD_mu
   larvaeDD = larvaeDD_mu
   adultDD = adultDD_mu
   OWadultDD = OWadultDD_mu
   CDL <- CDL_mu
-  params <- data.frame(eggDD, larvaeDD, pupDD, adultDD, OWadultDD, CDL)
+  params <- data.frame(eggDD, larvaeDD, adultDD, OWadultDD, CDL)
 }
 
 # create directory for model output
@@ -491,6 +499,9 @@ system.time({
                     #Calculate lifestage progression: for dd accum in correct lifestage, is it >= adult DD threshold?
                     if (i == "OA") {
                       progressOW3 <- (DDaccum * LSOW3) >= OWadultDD
+                      # # for aphalara, photoperiod threshold for emergence
+                      # # only progress from overwintering if ...
+                      # progressOW3 <- progressOW3 * (photo >= emerg_photo)
                       DDaccum <- Cond(progressOW3 == 1,(DDaccum - OWadultDD) * LSOW3, DDaccum)
                       progressOW3[is.na(progressOW3)] <- template[is.na(progressOW3)]
                       Lifestage <- Cond(LSOW3 == 1 & progressOW3 == 1, 0, Lifestage)
@@ -529,7 +540,7 @@ system.time({
                       # but add new raster to track percent of population actually
                       # in diapause following logistic regression
                       sens_mask <- Cond(Lifestage %in% photo_sens, 1, 0)
-                      prop_diap <- 1 - exp(cdl_b0 + cdl_b1 * photo) /
+                      prop_diap <- exp(cdl_b0 + cdl_b1 * photo) /
                         (1 + exp(cdl_b0 + cdl_b1 * photo))
                       tmpLS4 <- Cond(sens_mask == 1, prop_diap, LS4)
                       # need to account for prop_diap declining up until solstice
