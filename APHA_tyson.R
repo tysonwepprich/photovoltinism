@@ -34,10 +34,11 @@ rasterOptions(overwrite = FALSE,
 
 source('CDL_funcs.R') # load collection of functions for this model
 
-# prism_path <- "prismDL/2014"
-prism_path <- "/data/PRISM/2014"
+prism_path <- "prismDL/2015"
+# prism_path <- "/data/PRISM/2014"
 # prism_path <- "/data/PRISM/"
 
+gdd_file <- "dailygdd_2015_CONUS.grd"
 
 
 #####
@@ -60,8 +61,8 @@ owstage    <- "OA"
 # Logistic regression photoperiod
 # from Fritzi's lab data, two different populations
 # response is percent diapause
-coefs <- c(90.0916, -6.115054) # Northern
-# coefs <- c(86.33544, -6.115054) # Southern
+# coefs <- c(90.0916, -6.115054) # Northern
+coefs <- c(86.33544, -6.115054) # Southern
 
 # Degree day thresholds
 # LDT = lower development threshold, temp at which growth = 0 (using PRISM tmean)
@@ -79,7 +80,6 @@ larvaeDD_mu = 454
 adultDD_mu = 76 #time to oviposition
 # GDD data and calculation
 gdd_data <- "load" # c("load", "calculate")
-gdd_file <- "dailygdd.grd"
 calctype   <-"triangle"
 # introducing individual variation, tracked with simulation for each substage
 vary_indiv <- 1 # turn on indiv. variation
@@ -99,33 +99,40 @@ nday <- length(start_doy:end_doy)
 # Take empirical distribution and calculate substages
 # OW oviposition distribution
 
-# skewed t ballpark estimation from Len's OV percentiles
-arg1 = list(mu = 200, sigma2 = 25000, shape = 3, nu = 10)
-x = seq(100, 800, length.out = 1000)
-y = mixsmsn:::dt.ls(x, loc = arg1$mu, sigma2 = arg1$sigma2, shape = arg1$shape, nu = arg1$nu)
-plot(x, y)
-inputdist <- data.frame(x = x, y = y) %>% 
-  arrange(x) %>% 
-  mutate(CDF = cumsum(y/sum(y)))
-substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
-substages
+# # skewed t ballpark estimation from Len's OV percentiles
+# arg1 = list(mu = 200, sigma2 = 25000, shape = 3, nu = 10)
+# x = seq(100, 800, length.out = 1000)
+# y = mixsmsn:::dt.ls(x, loc = arg1$mu, sigma2 = arg1$sigma2, shape = arg1$shape, nu = arg1$nu)
+# plot(x, y)
+# inputdist <- data.frame(x = x, y = y) %>% 
+#   arrange(x) %>% 
+#   mutate(CDF = cumsum(y/sum(y)))
+# substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
+# substages
+
+# choose plausible GDD scenarios
+# substages <- data.frame(means = c(180, 230, 280, 330, 380, 430, 480),
+                        # weights = rep(.142857, 7))
+nsim <- 1
+substages <- data.frame(means = 200, weights = 1)
 
 # emergence by photoperiod instead of GDD alone
 # start at DOY 105 (April 15) photoperiod for Inunaki Pass, Kyushu (33.675 lat)
-emerg_photo <- photoperiod(33.675, doy = 105, 6)
+emerg_photo <- photoperiod(33.675, doy = 105, p = 1.5)
 
+# split map not needed if raster resolution larger
+ncores <- nsim
+# # try to run sims in parallel and also split map if large REGION
+# if (region_param == "CONUS"){
+#   ncores <- nsim * 2 # trying out half the cores needed, see if writeRaster better
+# }else{
+#   ncores <- nsim
+# }
 
-# try to run sims in parallel and also split map if large REGION
-if (region_param == "CONUS"){
-  ncores <- nsim * 2 # trying out half the cores needed, see if writeRaster better
-}else{
-  ncores <- nsim
-}
-
-# avoid memory issues on laptop
-if(ncores > (parallel::detectCores() / 2)){
-  ncores <- parallel::detectCores() / 2
-}
+# # avoid memory issues on laptop
+# if(ncores > (parallel::detectCores() / 2)){
+#   ncores <- parallel::detectCores() / 2
+# }
 
 if(.Platform$OS.type == "unix"){
   registerDoMC(cores = ncores)
@@ -149,6 +156,8 @@ for (file in files) {
 sortedlist <- sort(numlist)
 template <- raster(files[1])
 template <- crop(raster(files[1]), REGION)
+# include this to match GDD resolution if made larger
+template <- aggregate(x = template, fact = 4, fun = mean, na.rm = TRUE)
 template[!is.na(template)] <- 0
 
 
@@ -242,18 +251,18 @@ if (gdd_data == "calculate"){
   
 } # close gdd_data == calculate
 
-
-if (region_param == "CONUS"){
-  # splits template into list of smaller map rasters to run in parallel
-  # only doing this for CONUS, because benefit lost for smaller map sizes
-  SplitMap <- SplitRas(template, ppside = 2, TRUE, FALSE)
-  # runs_par <- expand.grid(1:nsim, 1:length(SplitMap))
-  # names(runs_par) <- c("sim", "map")
-}else{
-  SplitMap <- list(template)
-  # runs_par <- expand.grid(1:nsim, 1:length(SplitMap))
-  # names(runs_par) <- c("sim", "map")
-}
+SplitMap <- list(template)
+# if (region_param == "CONUS"){
+#   # splits template into list of smaller map rasters to run in parallel
+#   # only doing this for CONUS, because benefit lost for smaller map sizes
+#   SplitMap <- SplitRas(template, ppside = 2, TRUE, FALSE)
+#   # runs_par <- expand.grid(1:nsim, 1:length(SplitMap))
+#   # names(runs_par) <- c("sim", "map")
+# }else{
+#   SplitMap <- list(template)
+#   # runs_par <- expand.grid(1:nsim, 1:length(SplitMap))
+#   # names(runs_par) <- c("sim", "map")
+# }
 
 if (vary_indiv == 1){
   eggDD = eggDD_mu
@@ -498,11 +507,14 @@ system.time({
                     
                     #Calculate lifestage progression: for dd accum in correct lifestage, is it >= adult DD threshold?
                     if (i == "OA") {
-                      progressOW3 <- (DDaccum * LSOW3) >= OWadultDD
-                      # # for aphalara, photoperiod threshold for emergence
-                      # # only progress from overwintering if ...
-                      # progressOW3 <- progressOW3 * (photo >= emerg_photo)
-                      DDaccum <- Cond(progressOW3 == 1,(DDaccum - OWadultDD) * LSOW3, DDaccum)
+                      # Typical GDD control of OW emergence
+                      # progressOW3 <- (DDaccum * LSOW3) >= OWadultDD
+                      # DDaccum <- Cond(progressOW3 == 1,(DDaccum - OWadultDD) * LSOW3, DDaccum)
+                      
+                      # for aphalara, photoperiod threshold for emergence
+                      # only progress from overwintering if ...
+                      progressOW3 <- LSOW3 * (photo >= emerg_photo)
+                      DDaccum <- Cond(progressOW3 == 1, 0, DDaccum)
                       progressOW3[is.na(progressOW3)] <- template[is.na(progressOW3)]
                       Lifestage <- Cond(LSOW3 == 1 & progressOW3 == 1, 0, Lifestage)
                       Lifestage[is.na(Lifestage)] <- template[is.na(Lifestage)]
