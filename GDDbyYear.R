@@ -6,6 +6,9 @@
 library(sp)
 library(rgdal)
 library(raster)
+library(dplyr)
+library(purrr)
+library(stringr)
 source('CDL_funcs.R')
 
 rasterOptions(overwrite = FALSE, 
@@ -18,23 +21,93 @@ library(foreach) # for parallelized loops
 # library(doMC) 
 library(doSNOW) # for WINDOWS
 
-region_param <- "EAST"
+region_param <- "CONUS"
+
 
 LDT <- 10
 UDT <- 37.8
 
-# base_path <- "/data/PRISM/"
-base_path <- "prismDL"
+base_path <- "/data/PRISM/"
+# base_path <- "prismDL"
 
-years <- c(2014:2017)
+years <- c(2013:2018)
+
+
+
+spp <- stringr::str_split(string = f, pattern = coll("/"), 3) %>% map(3)
+spp <- stringr::str_split(string = spp, pattern = coll("."), 4) %>% map(1) %>% unlist()
+
+################
+# SITE BASED
+################
+# add feature to only extract at certain sites
+sites <- read.csv("data/GCA_modeling_sites.csv", header = TRUE)
+# use forecasts
+forecast <- "10yr" # c("NMME", "10yr")
+
+outlist <- list()
+for (yr in years){
+  prism_path <- paste(base_path, yr, sep = "/")
+  
+  # Search pattern for PRISM daily temperature grids. Load them for processing.
+  # TMIN
+  pattern = paste("(PRISM_tmin_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
+  tminfiles <- list.files(path = prism_path, pattern=pattern, 
+                          all.files=FALSE, full.names=TRUE, recursive = TRUE)
+  
+  tminfiles <- ExtractBestPRISM(tminfiles, yr)
+
+  r <- raster(tminfiles[1])
+  tminstack <- stack(r)
+  tminstack@layers <- sapply(tminfiles, function(x) { r@file@name=x; r } ) 
+  
+  # TMAX
+  pattern = paste("(PRISM_tmax_)(.*)(_bil.bil)$", sep="")
+  tmaxfiles <- list.files(path = prism_path, pattern=pattern, 
+                          all.files=FALSE, full.names=TRUE, recursive = TRUE)
+  tmaxfiles <- ExtractBestPRISM(tmaxfiles, yr)
+  
+  r <- raster(tmaxfiles[1])
+  tmaxstack <- stack(r)
+  tmaxstack@layers <- sapply(tmaxfiles, function(x) { r@file@name=x; r } ) 
+  
+  # # by extent
+  # REGION <- assign_extent(region_param)
+  # tminstack <- crop(tminstack, REGION)
+  # tmaxstack <- crop(tmaxstack, REGION)
+  
+  # by site
+  tmin <- extract(tminstack, sites[, c("x", "y")])
+  tmax <- extract(tmaxstack, sites[, c("x", "y")])
+  
+  GDD <- data.frame(TriDD(tmax, tmin, LDT, UDT))
+  names(GDD) <- paste("yday", 1:ncol(GDD), sep = "_")
+  gdd <- sites %>% 
+    bind_cols(GDD) %>% 
+    tidyr::gather(key = yday, value = DD, -ID, -x, -y) %>% 
+    mutate(yday = unlist(map(stringr::str_split(string = yday, pattern = coll("_"), 2), 2)),
+           year = yr)
+ outlist[[length(outlist)+1]] <- gdd 
+}
+
+gdddf <- bind_rows(outlist)
+
+
+
+
+
+
+################
+# RASTER BASED
+################
 # LINUX
-# ncores <- length(years)
-# registerDoMC(cores = ncores)
+ncores <- length(years)
+registerDoMC(cores = ncores)
 
 # WINDOWS
-ncores <- length(years)
-cl <- makeCluster(ncores)
-registerDoSNOW(cl)
+# ncores <- length(years)
+# cl <- makeCluster(ncores)
+# registerDoSNOW(cl)
 
 foreach(yr = years, .packages= "raster")   %dopar% {
   prism_path <- paste(base_path, yr, sep = "/")
