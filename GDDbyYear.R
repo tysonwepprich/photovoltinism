@@ -27,11 +27,11 @@ library(doSNOW) # for WINDOWS
 
 region_param <- "CONUS"
 
-LDT <- 6.1
-UDT <- 35
+LDT <- 10
+UDT <- 37
 
-base_path <- "/data/PRISM/"
-# base_path <- "prismDL"
+# base_path <- "/data/PRISM/"
+base_path <- "prismDL"
 
 years <- c(2013:2018)
 
@@ -43,7 +43,7 @@ years <- c(2013:2018)
 # add feature to only extract at certain sites
 sites <- read.csv("data/GCA_modeling_sites.csv", header = TRUE)
 # use forecasts
-forecast <- "10yr" # c("NMME", "10yr")
+# forecast <- "10yr" # c("NMME", "10yr")
 
 outlist <- list()
 for (yr in years){
@@ -92,7 +92,9 @@ for (yr in years){
 
 gdddf <- bind_rows(outlist)
 
-
+saveRDS(gdddf, "gdddf.rds")
+# TODO: select prediction as 10yr (default) or one of past years substitution
+# send info to map_event.R
 
 
 

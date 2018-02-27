@@ -120,3 +120,79 @@ plt <- ggplot(resdf, aes(x = reorder(ID, date), y = date, color = as.factor(year
 plt
 
 ggsave(filename = "Galerucella_100DD_EAST.png", plot = plt, device = "png", width = 15, height = 8, units = "in")
+
+
+# Map range of GDD at different sites, 100-150DD dates
+cutoffday <- 55 # when PRISM observations switch to forecasts
+
+# Add new predictions for current year
+preddf <- gdddf %>% 
+  filter(complete.cases(.),
+         year != 2018) %>% 
+  mutate(yday = as.numeric(yday)) %>% 
+  arrange(yday) %>% 
+  group_by(ID, yday) %>%   
+  summarise(DD = mean(DD)) %>% 
+  filter(yday > cutoffday) %>% 
+  mutate(year = "2018+5yrmean")
+
+
+# replace predictions after cutoff day
+obs <- gdddf %>% 
+  select(-x, -y) %>% 
+  mutate(yday = as.numeric(yday)) %>% 
+  filter(complete.cases(.),
+         year == 2018, 
+         yday <= cutoffday) %>% 
+  mutate(year = "2018+5yrmean")
+
+preds <- bind_rows(preddf, obs)
+
+gdddf$year <- as.factor(as.character(gdddf$year))
+levels(gdddf$year)[6] <- "2018+10yrmean"
+
+resdf <- gdddf %>% 
+  select(-x, -y) %>% 
+  filter(complete.cases(.)) %>% 
+  mutate(yday = as.numeric(yday)) %>% 
+  bind_rows(preds) %>% 
+  arrange(yday) %>% 
+  group_by(year, ID) %>% 
+  mutate(AccumDD = cumsum(DD)) %>% 
+  filter(AccumDD >= 100) %>% 
+  filter(AccumDD <= 150) %>% 
+  filter(row_number() == 1L | row_number() == n()) %>% 
+  mutate(date = as.Date(yday, origin=as.Date("2000-12-31")),
+         bound = c("start", "end")) %>% 
+  dplyr::select(ID, year, date, bound) %>% 
+  tidyr::spread(bound, date) %>% 
+  # filter(ID %in% levels(gdddf$ID)[c(1, 3, 4, 5, 10, 12, 15, 16, 17, 21, 22, 25, 26, 28, 30)]) %>%  # East and West
+  filter(ID %in% levels(gdddf$ID)[c(1, 3, 5, 10, 15, 17, 21, 22, 25, 26, 30)]) %>%  # Just NW sites
+  group_by(ID) %>% 
+  mutate(meanstart = mean(start))
+
+
+
+
+
+
+theme_set(theme_bw(base_size = 16)) 
+
+
+plt <- ggplot(resdf, aes(x = reorder(ID, meanstart), ymin = start, ymax = end, group = as.factor(year), color = as.factor(year))) +
+  # geom_jitter(size = 3, width = .15) +
+  geom_linerange(position = position_dodge(width = .6), size = 2) +
+  scale_color_viridis(discrete = TRUE, name = "Year", option = "D") +
+  scale_y_date(date_breaks = "1 week", date_labels = "%b-%d") +
+  coord_flip() +
+  ggtitle("Date range for Galerucella overwintering adult emergence (100-150 degree-days)") +
+  xlab("Sites ordered by\nmean start of emergence") +
+  guides(color = guide_legend(reverse=TRUE)) 
+
+plt
+
+ggsave(filename = "Galerucella_daterange.png", plot = plt, device = "png", width = 15, height = 8, units = "in")
+
+
+
+

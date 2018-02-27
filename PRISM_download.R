@@ -6,10 +6,10 @@
 library(prism)
 library(lubridate)
 
-startdate <- "2014-01-01"
-enddate <- "2014-12-31"
+startdate <- "2017-10-01"
+enddate <- "2017-12-31"
 yr <- year(ymd(startdate))
-options(prism.path = paste("prismDL", yr, sep = "/")
+options(prism.path = paste("prismDL", yr, sep = "/"))
 
 get_prism_dailys("tmin", minDate = startdate, 
                  maxDate = enddate, keepZip = FALSE)
