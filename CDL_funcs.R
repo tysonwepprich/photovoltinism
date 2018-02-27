@@ -194,3 +194,37 @@ assign_extent <- function(region_param = c("CONUS", "NORTHWEST", "OR", "TEST", "
                    "EAST"         = extent(-93, -71, 35, 47))
   return(REGION)
 }
+
+# Take .bil files from PRISM yearly directories
+# Return best data for each day
+# Remove leap year if not needed
+ExtractBestPRISM <- function(prismfiles, yr){
+  qa <- str_split(string = prismfiles, pattern = coll("_"), 6) %>% map(3) %>% unlist()
+  
+  dates <- regexpr(pattern = "[0-9]{8}", text = prismfiles)
+  
+  df <- data.frame(dates = regmatches(prismfiles, dates),
+                   quality = substr(qa, start=1, stop=4),
+                   rownum = 1:length(qa))
+  
+  # sorting backwards matches data hierarchy
+  # stable > provisional > early > 10yr
+  df2 <- df %>% 
+    mutate(quality = as.character(quality)) %>% 
+    group_by(dates) %>% 
+    dplyr::arrange(desc(quality)) %>% 
+    mutate(datarank = 1:n()) %>% 
+    filter(datarank == 1)
+  
+  # still has issue with leap year
+  if (yr %% 4 != 0) {
+    df2 <- df2[-which(df2$dates == paste0(yr, "0229")), ]
+  }
+  
+  best <- prismfiles[df2$rownum]
+  dates <- regexpr(pattern = "[0-9]{8}", text = best)
+  
+  fileorder <- order(regmatches(best, dates))
+  prismfiles <- best[fileorder]
+  return(prismfiles)
+}

@@ -27,6 +27,25 @@ rasterOptions(overwrite = FALSE,
 
 source('CDL_funcs.R') # load collection of functions for this model
 
+# PRISM gridded climate data is the base of the model
+
+# # PRISM download
+# # using ropensci 'prism' package to access webservice
+# 
+# library(prism)
+# library(lubridate)
+# 
+# startdate <- "2014-01-01"
+# enddate <- "2014-12-31"
+# yr <- year(ymd(startdate))
+# options(prism.path = paste("prismDL", yr, sep = "/")
+#         
+#         get_prism_dailys("tmin", minDate = startdate, 
+#                          maxDate = enddate, keepZip = FALSE)
+#         get_prism_dailys("tmax", minDate = startdate, 
+#                          maxDate = enddate, keepZip = FALSE)
+        
+# after downloading PRISM data set directory path
 prism_path <- "prismDL/2016"
 # prism_path <- "/data/PRISM/2014"
 # prism_path <- "/data/PRISM/"
@@ -40,7 +59,7 @@ prism_path <- "prismDL/2016"
 # model extext
 start_doy  <- 1
 end_doy    <- 365
-region_param <- "SOUTHWEST"
+region_param <- "SOUTHWEST" # see assign_extent function for values
 # life cycle parameters
 stgorder   <- c("OA","E","L","P","A","F")
 photo_sens <- 3 #c(-1, 3) # integer life stages for now
@@ -60,6 +79,8 @@ coefs <- c(53.82741, -3.939534) # Big Bend State Park
 
 # Degree day thresholds
 # LDT = lower development threshold, temp at which growth = 0 (using PRISM tmean)
+# Model can do different thresholds for each stage, but much slower 
+# because degree-days cannot be calculated ahead of time for each grid cell
 eggLDT     <- 11.1
 eggUDT     <- 36.7  
 larvaeLDT  <- 11.1
@@ -77,9 +98,12 @@ pupDD_mu <-  188
 adultDD_mu <-  51 #time to oviposition
 # GDD data and calculation
 gdd_data <- c("calculate", "load")[1] # choose one
-gdd_file <- "dailygdd_2017_WEST.grd"
+gdd_file <- "dailygdd_2017_WEST.grd" # if gdd_data = "load"
 calctype   <-"triangle"
+
 # introducing individual variation, tracked with simulation for each substage
+# each substage has common parameters as a way to discretize a continuous emergence cruve
+# after modeling the substages, I combine them to approximate interspecific variation
 vary_indiv <- 1 # turn on indiv. variation
 if (vary_indiv == 1){
   nsim <- 7 # number of substages
@@ -118,7 +142,7 @@ if (region_param == "CONUS"){
 
 
 # still here for day naming in loop, but not necessary
-# figure out how to cut
+# TODO: figure out how to cut
 pattern = paste("(PRISM_tmin_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
 files <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
 #Check that there are enough files for the year
@@ -282,7 +306,8 @@ if(.Platform$OS.type == "unix"){
 
 #Run model
 ############################
-
+# Parallelized by each substage
+# also by splitting CONUS map if modeling at large region
 system.time({
   outfiles <- foreach(sim = 1:nsim,
                       # outfiles <- foreach(sim = 5, # if some runs don't work, rerun individually
@@ -307,9 +332,6 @@ system.time({
               template <- SplitMap[[map]]
               tmpGDD <- crop(GDD, template)
               tmpGDD <- tmpGDD[[start_doy:end_doy]]
-              
-              # old nested foreach loop
-              # foreach(sim = 1:nsim, .packages= "raster") %dopar% {
               
               # Initialize all tracking rasters as zero with the template
               eggDD <- params$eggDD[sim]
@@ -591,7 +613,6 @@ system.time({
                       prop_diap <- exp(cdl_b0 + cdl_b1 * photo) / # add 1- to start if prop_repro in coefs
                         (1 + exp(cdl_b0 + cdl_b1 * photo))
                       tmpLS4 <- Cond(sens_mask == 1, prop_diap, LS4)
-                      # need to account for prop_diap declining up until solstice
                       # only let proportion diapausing increase over season
                       LS4 <- Cond(prop_diap < LS4, LS4, tmpLS4)
                       rm(sens_mask, prop_diap, tmpLS4)
