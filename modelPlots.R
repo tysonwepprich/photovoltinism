@@ -12,7 +12,7 @@ rasterOptions(overwrite = FALSE,
 # for parallel simulations with control over seed for reproducibility
 library(doRNG)
 library(foreach) # for parallelized loops
-library(doMC) # for LINUX
+# library(doMC) # for LINUX
 library(doSNOW) # for WINDOWS
 
 
@@ -29,11 +29,11 @@ library(grid)
 # results directory
 # newname <- "GCA_WEST_SCDL_2017"
 # newname <- "DCA_SW_2016"
-newname <- "APHA_CONUS_NCDL_GDD"
+newname <- "APHA_CONUS_SCDL_2016_PHO"
 
 source('CDL_funcs.R')
 region_param <- "CONUS"
-gdd_file <- "dailygdd.grd"
+gdd_file <- "dailygdd_2016_CONUS.grd"
 
 REGION <- assign_extent(region_param = region_param)
 
@@ -76,31 +76,34 @@ sites <- data.frame(ID = c("Corvallis, OR", "Richland, WA", "JB Lewis-McChord, W
 
 nsim <- 7
 
-# Try 2 with skewed t
-arg1 = list(mu = 97.94, sigma2 = 2241.7, shape = 3.92, nu = 9.57)
-x = seq(50, 350, length.out = 1000)
-y = mixsmsn:::dt.ls(x, loc = arg1$mu, sigma2 = arg1$sigma2, shape = arg1$shape, nu = arg1$nu)
-inputdist <- data.frame(x = x, y = y) %>% 
-  arrange(x) %>% 
-  mutate(CDF = cumsum(y/sum(y)))
-substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
-# To get observations to fit for overwinter adults and F1 eggs, 
-# overwinter pre-oviposition period is only 50 deg days
-substages$means <- substages$means + 15
+# Galerucella/Diorhabda substages
+# arg1 = list(mu = 97.94, sigma2 = 2241.7, shape = 3.92, nu = 9.57)
+# x = seq(50, 350, length.out = 1000)
+# y = mixsmsn:::dt.ls(x, loc = arg1$mu, sigma2 = arg1$sigma2, shape = arg1$shape, nu = arg1$nu)
+# inputdist <- data.frame(x = x, y = y) %>% 
+#   arrange(x) %>% 
+#   mutate(CDF = cumsum(y/sum(y)))
+# substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
+# # To get observations to fit for overwinter adults and F1 eggs, 
+# # overwinter pre-oviposition period is only 50 deg days
+# substages$means <- substages$means + 15
 
 
 # APHALARA SUBSTAGES
+# # skewed t ballpark estimation from Len's OV percentiles
+# arg1 = list(mu = 250, sigma2 = 25000, shape = 3, nu = 10)
+# x = seq(150, 950, length.out = 1000)
+# y = mixsmsn:::dt.ls(x, loc = arg1$mu, sigma2 = arg1$sigma2, shape = arg1$shape, nu = arg1$nu)
+# plot(x, y)
+# inputdist <- data.frame(x = x, y = y) %>% 
+#   arrange(x) %>% 
+#   mutate(CDF = cumsum(y/sum(y)))
+# substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
 
-# skewed t ballpark estimation from Len's OV percentiles
-arg1 = list(mu = 250, sigma2 = 25000, shape = 3, nu = 10)
-x = seq(150, 950, length.out = 1000)
-y = mixsmsn:::dt.ls(x, loc = arg1$mu, sigma2 = arg1$sigma2, shape = arg1$shape, nu = arg1$nu)
-plot(x, y)
-inputdist <- data.frame(x = x, y = y) %>% 
-  arrange(x) %>% 
-  mutate(CDF = cumsum(y/sum(y)))
-substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
-
+# choose plausible GDD scenarios
+substages <- data.frame(means = c(180, 230, 280, 330, 380, 430, 480), weights = rep(.142857, 7))
+# nsim <- 1
+# substages <- data.frame(means = 200, weights = 1)
 
 newdirs <- c(
   # "GCA_NWSMALL_2014", "GCA_NWSMALL_2015", "GCA_NWSMALL_2016",
@@ -223,16 +226,17 @@ setwd(returnwd)
 #####################
 # quick plots of results
 
-res <- brick(paste(newname, "/", "LS_001_si.grd", sep = ""))
-res <- brick(paste(newname, "/", "NumGen_001_sim7.grd", sep = ""))
+res <- brick(paste(newname, "/", "LS0_001_sim1.grd", sep = ""))
+res <- brick(paste(newname, "/", "NumGen_001_sim1.grd", sep = ""))
 NAvalue(res) <- 200
 
-res <- brick(paste(newname, "/", "LS4_001_sim4.grd", sep = ""))
+res <- brick(paste(newname, "/", "LS4_001_sim1.grd", sep = ""))
 res <- brick(paste(newname, "/", "NumGen_002_weighted.grd", sep = ""))
 
 # res <- crop(res, extent(-125.1,-103.8,40.6,49.2)) #NORTHWEST
 # res <- crop(res, extent(-124.7294, -116.2949, 41.7150, 46.4612)) #OREGON
 plot(res[[365]])
+plot(res[[seq(95, 130, 5)]])
 plot(res[[seq(100, 360, 50)]])
 plot(res[[seq(200, 300, 20)]])
 plot(res[[seq(180, 280, 20)]])
@@ -638,4 +642,120 @@ ggsave(paste("NEWPartial","NumGen", ".png", sep = ""),
        plot = tmpplt, device = "png", width = 6, height = 6, units = "in")
 
 
+# APHALARA
+# Compare N and S CDL and timing of overwinter emergence
 
+years <- 2016 # c(2014:2016)
+sims <- "sim1" # paste0("sim", c(1, 4, 7))
+cdl <- "SCDL" # c("NCDL", "SCDL")
+emrg <- c("GDD", "PHO")
+params <- expand.grid(years, sims, cdl, emrg)
+names(params) <- c("year", "sim", "cdl", "emrg")
+
+outlist <- list()
+for (i in 1:nrow(params)){
+  yr <- params$year[i]
+  sim <- params$sim[i]
+  cdl <- params$cdl[i]
+  emrg <- params$emrg[i]
+  
+  newname <- paste0("APHA_CONUS_", cdl, "_", yr, "_", emrg)
+  
+  days <- 365
+  f <-list.files(path = newname, recursive = TRUE, full.names = TRUE)
+  rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
+  rasfiles <- rasfiles[grep(pattern = sim, x = rasfiles, fixed = TRUE)]
+  photosite <- rasfiles[grep(pattern = "LS4", x = rasfiles, fixed = TRUE)]
+  
+  volt <- brick(rasfiles[grep(pattern = "NumGen", x = rasfiles, fixed = TRUE)])
+  volt <- volt + template
+  diap <- brick(photosite)
+  diap <- diap + template
+  threshold <- .75
+  volt <- Cond(diap <= threshold, volt, 0)
+  volt2 <- calc(volt, fun = function(x){cummax(x)})
+  
+  df <- as.data.frame(volt2[[days]], xy=TRUE)
+  names(df)[3] <- "Voltinism"
+  
+  # discrete voltinism classes for visual
+  df$Voltinism <- round(df$Voltinism)
+  df$Voltinism <- as.factor(as.character(df$Voltinism))
+  df$year <- yr
+  df$sim <- sim
+  df$cdl <- cdl
+  df$emrg <- emrg
+  
+  outlist[[i]] <- df
+}
+outdf <- bind_rows(outlist)
+levels(outdf$emrg) <- c("Degree-days", "Photoperiod")
+# levels(outdf$sim) <- c("Early", "Mid", "Late")
+levels(outdf$cdl) <- c("Northern", "Southern")
+
+voltlevs <- unique(outdf$Voltinism)
+voltlevs <- sort(voltlevs[is.na(voltlevs) == FALSE])
+voltcols <- viridis(n = length(voltlevs), begin = 0, end = 1)
+names(voltcols) <- voltlevs
+
+for (yr in years){
+  df <- outdf %>% filter(year == yr)
+  tmpplt <- ggplot(data = df, aes(x, y, fill = Voltinism)) +
+    geom_raster() +
+    geom_polygon(data = states, aes(group = group), fill = NA, color = "black", inherit.aes = TRUE, size = .1) +
+    theme_bw() +
+    coord_fixed(1.3) +
+    scale_fill_manual(values = voltcols) +
+    # scale_fill_viridis(na.value = "white", begin = 0, end = numcol * .1, discrete = TRUE) + 
+    ggtitle(paste0("Aphalara photoperiod response in ", yr)) +
+    guides(color = FALSE) +
+    facet_wrap( ~ emrg, ncol = 1)
+  tmpplt
+  ggsave(paste0("APHA_", yr,"_NumGen_PHO", ".png", sep = ""),
+         plot = tmpplt, device = "png", width = 10, height = 8, units = "in")
+  
+}
+
+
+# plot diapause over time
+newnames <- c("APHA_CONUS_SCDL_2016_PHO", "APHA_CONUS_SCDL_2016_GDD", "APHA_CONUS_NCDL_2016_GDD")
+outlist <- list()
+for (nn in newnames){
+  days <- 365
+  f <-list.files(path = nn, recursive = TRUE, full.names = TRUE)
+  rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
+  rasfiles <- rasfiles[grep(pattern = sim, x = rasfiles, fixed = TRUE)]
+  
+  eggs <- brick(rasfiles[grep(pattern = "LS0", x = rasfiles, fixed = TRUE)])
+  eggs <- eggs + template
+  eggs2 <- calc(eggs, fun = function(x){min(which(x == 1))})
+  
+  diap <- brick(rasfiles[grep(pattern = "LS4", x = rasfiles, fixed = TRUE)])[[365]]
+  diap <- diap + template
+  
+  df <- as.data.frame(eggs2, xy=TRUE)
+  names(df)[3] <- "FirstEggs"
+  
+  df2 <- as.data.frame(diap, xy = TRUE)
+  names(df2)[3] <- "Diap"
+  
+  outdf <- merge(df, df2)
+  outdf$name <- nn
+  outlist[[length(outlist)+1]] <- outdf
+}
+outdf <- bind_rows(outlist)
+outdf$FirstEggs[which(is.infinite(outdf$FirstEggs))] <- NA
+
+tmpplt <- ggplot(data = outdf, aes(x, y, fill = Diap)) +
+  geom_raster() +
+  geom_polygon(data = states, aes(group = group), fill = NA, color = "black", inherit.aes = TRUE, size = .1) +
+  theme_bw() +
+  coord_fixed(1.3) +
+  # scale_fill_manual(values = voltcols) +
+  scale_fill_viridis(na.value = "white", begin = 0, end = 1, discrete = FALSE) +
+  ggtitle("Diapause at end of year") +
+  guides(color = FALSE) +
+  facet_wrap( ~ name, ncol = 1)
+tmpplt
+ggsave(paste0("APHA_Eggs_GDD", ".png", sep = ""),
+       plot = tmpplt, device = "png", width = 10, height = 8, units = "in")

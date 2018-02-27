@@ -1,4 +1,8 @@
-# this outputs average GDD per day over 2007-2013, 
+# using PRISM daily temperature max/min
+# calculates GDD based on given thresholds for a year at a time
+
+# also, frost days can be calculated like GDD for season ends
+# one product: average GDD per day over 2007-2013, 
 # to match models in Grevstad & Coop 2015
 
 
@@ -23,9 +27,8 @@ library(doSNOW) # for WINDOWS
 
 region_param <- "CONUS"
 
-
-LDT <- 10
-UDT <- 37.8
+LDT <- 6.1
+UDT <- 35
 
 base_path <- "/data/PRISM/"
 # base_path <- "prismDL"
@@ -33,9 +36,6 @@ base_path <- "/data/PRISM/"
 years <- c(2013:2018)
 
 
-
-spp <- stringr::str_split(string = f, pattern = coll("/"), 3) %>% map(3)
-spp <- stringr::str_split(string = spp, pattern = coll("."), 4) %>% map(1) %>% unlist()
 
 ################
 # SITE BASED
@@ -100,6 +100,7 @@ gdddf <- bind_rows(outlist)
 ################
 # RASTER BASED
 ################
+
 # LINUX
 ncores <- length(years)
 registerDoMC(cores = ncores)
@@ -139,7 +140,10 @@ foreach(yr = years, .packages= "raster")   %dopar% {
   tminstack <- crop(tminstack, REGION)
   tmaxstack <- crop(tmaxstack, REGION)
   
-
+  # larger resolution to save disk space
+  tminstack <- aggregate(tminstack, fact = 4, fun = mean, na.rm = TRUE)
+  tmaxstack <- aggregate(tmaxstack, fact = 4, fun = mean, na.rm = TRUE)
+  
   # system.time({
   GDD <- overlay(x = tmaxstack, y = tminstack, 
                  fun = function(x, y){
