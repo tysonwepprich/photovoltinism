@@ -662,7 +662,7 @@ if(.Platform$OS.type == "windows"){
 
 source('CDL_funcs.R')
 region_param <- "WEST"
-gdd_file <- "dailygdd_2017_WEST.grd"
+gdd_file <- "GDDraster/meanGDD_07_13.grd"
 
 REGION <- switch(region_param,
                  "CONUS"        = extent(-125.0,-66.5,24.0,50.0),
@@ -700,7 +700,16 @@ for (d in 1:nlayers(Lifestage)){
   # LS4 <- tmpLS4 + LS4
   # need to account for prop_diap declining up until solstice
   # only let proportion diapausing increase over season
-  LS4 <- Cond(tmpLS4 < LS4, LS4, LS4 + tmpLS4)
+  LS4 <- Cond(tmpLS4 < LS4, LS4, tmpLS4)
+  
+  # photo <- RasterPhoto(template, doy, perc_twilight = 25)
+  # prop_diap <- 1 - exp(cdl_b0 + cdl_b1 * photo) /
+  #   (1 + exp(cdl_b0 + cdl_b1 * photo))
+  # tmpLS4 <- Cond(sens_stage[[d]] == 1, prop_diap, LS4)
+  # LS4 <- Cond(prop_diap < LS4, LS4, tmpLS4)
+  
+  
+  
   if (!exists("LS4stack")){
     LS4stack <- stack(LS4)
   } else {
@@ -708,6 +717,6 @@ for (d in 1:nlayers(Lifestage)){
   }
 }
 
-plot(LS4stack[[seq(100, 290, 40)]])
+plot(LS4stack[[seq(150, 250, 10)]])
 
 ################################  

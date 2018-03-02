@@ -51,7 +51,7 @@ prism_path <- "prismDL/2014"
 # model extext
 start_doy  <- 1
 end_doy    <- 365
-region_param <- "NW_SMALL"
+region_param <- "TEST"
 # life cycle parameters
 stgorder   <- c("OA","E","L","P","A","F")
 photo_sens <- 3 #c(-1, 3) # integer life stages for now
@@ -82,13 +82,13 @@ larvaeDD_mu = 136.4 # 46.9 + 45.8 + 43.7 instars
 pupDD_mu = 137.7 
 adultDD_mu = 125.9 #time to oviposition
 # GDD data and calculation
-gdd_data <- "calculate" # c("load", "calculate")
-gdd_file <- "dailygdd_2017_WEST.grd"
+gdd_data <- "load" # c("load", "calculate")
+gdd_file <- "dailygdd.grd"
 calctype   <-"triangle"
 # introducing individual variation, tracked with simulation for each substage
 vary_indiv <- 1 # turn on indiv. variation
 if (vary_indiv == 1){
-  nsim <- 7 # number of substages
+  nsim <- 4 # number of substages
 }else{
   nsim <- 1
 }
@@ -118,7 +118,7 @@ y = mixsmsn:::dt.ls(x, loc = arg1$mu, sigma2 = arg1$sigma2, shape = arg1$shape, 
 inputdist <- data.frame(x = x, y = y) %>% 
   arrange(x) %>% 
   mutate(CDF = cumsum(y/sum(y)))
-substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
+substages <- SubstageDistrib(dist = inputdist, numstage = 4, perc = .99)
 # To get observations to fit for overwinter adults and F1 eggs, 
 # overwinter pre-oviposition period is only 50 deg days
 substages$means <- substages$means + 15
@@ -701,64 +701,3 @@ if(.Platform$OS.type == "windows"){
   stopCluster(cl)
 }
 
-
-# Run model, but only with photoperiod update for speed
-# The way I built the diapause decision, model results
-# already track lifecycle through the end of GDD accumulation.
-# To update photoperiod response, just need to take model
-# results and rerun sens stage x photoperiod cue = diapause.
-
-# DOESN'T WORK WITH WEIGHTED RESULTS
-# NEED SEPARATE SUBSTAGE SIMS I THINK
-
-source('CDL_funcs.R')
-region_param <- "WEST"
-gdd_file <- "dailygdd_2017_WEST.grd"
-
-REGION <- switch(region_param,
-                 "CONUS"        = extent(-125.0,-66.5,24.0,50.0),
-                 "NORTHWEST"    = extent(-125.1,-103.8,40.6,49.2),
-                 "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612),
-                 "TEST"         = extent(-124, -122.5, 44, 45),
-                 "WEST"         = extent(-125.14, -109, 37, 49.1))
-
-
-GDD <- brick(gdd_file)
-
-template <- GDD[[1]]
-template[!is.na(template)] <- 0
-template <- crop(template, REGION)
-
-# input sensitive stage
-# values are 0-1 proportion of population in stage
-Lifestage <- brick("GCA_WEST_SCDL_2017/LS3_001_weighted.grd")
-Lifestage <- Lifestage + template
-
-LS4 <- Lifestage[[1]]
-LS4[!is.na(LS4)] <- 0
-
-for (d in 1:nlayers(Lifestage)){
-  # doy <- lubridate::yday(lubridate::ymd(d))
-  doy <- as.numeric(gsub("layer.", replacement = "", x = names(Lifestage)[d]))
-  photo <- RasterPhoto(template, doy, perc_twilight = 25)
-  
-  # sens_mask <- Cond(Lifestage %in% photo_sens, 1, 0)
-  prop_diap <- 1 - exp(cdl_b0 + cdl_b1 * photo) /
-    (1 + exp(cdl_b0 + cdl_b1 * photo))
-  # tmpLS4 <- Cond(sens_mask == 1, prop_diap, LS4)
-  
-  tmpLS4 <- Lifestage[[d]] * prop_diap
-  # LS4 <- tmpLS4 + LS4
-  # need to account for prop_diap declining up until solstice
-  # only let proportion diapausing increase over season
-  LS4 <- Cond(tmpLS4 < LS4, LS4, LS4 + tmpLS4)
-  if (!exists("LS4stack")){
-    LS4stack <- stack(LS4)
-  } else {
-    LS4stack <- addLayer(LS4stack, LS4)
-  }
-}
-
-plot(LS4stack[[seq(100, 290, 40)]])
-
-################################  
