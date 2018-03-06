@@ -75,8 +75,6 @@ RasterPhoto <- function(rast, doy, perc_twilight){
   p <- perc_twilight * 6 / 100
   hours <- photoperiod(xy[, 2], doy, p)
   outrast <- setValues(rast, hours)
-  rast[!is.na(rast)] <- 0
-  outrast <- rast + outrast
 }
 
 
@@ -182,14 +180,14 @@ CombineMaps <- function(rasfiles, tmpdir, newdir){
 
 #####
 # Add new extent definitions here for use in models and plots
-assign_extent <- function(region_param = c("CONUS", "NORTHWEST", "OR", "TEST", "WEST", "SOUTHWEST")){
+assign_extent <- function(region_param = c("CONUS", "NORTHWEST", "NW_SMALL", "OR","EAST", "TEST", "WEST", "SOUTHWEST")){
   REGION <- switch(region_param,
                    "CONUS"        = extent(-125.0,-66.5,24.0,50.0),
                    "NORTHWEST"    = extent(-125.1,-103.8,40.6,49.2),
                    "NW_SMALL"      = extent(-125.1, -117.9, 38.5, 49.2),
                    "OR"           = extent(-124.7294, -116.2949, 41.7150, 46.4612),
                    "TEST"         = extent(-124, -122.5, 44, 45),
-                   "WEST"         = extent(-125.14, -109, 37, 49.1),
+                   "WEST"         = extent(-121.4, -102.5, 31.23, 47.33),
                    "SOUTHWEST"    = extent(-120.17, -108.25, 31.5, 42.3),
                    "EAST"         = extent(-93, -71, 35, 47))
   return(REGION)
@@ -198,7 +196,7 @@ assign_extent <- function(region_param = c("CONUS", "NORTHWEST", "OR", "TEST", "
 # Take .bil files from PRISM yearly directories
 # Return best data for each day
 # Remove leap year if not needed
-ExtractBestPRISM <- function(prismfiles, yr){
+ExtractBestPRISM <- function(prismfiles, yr, leap = "keep"){
   numsplits <- str_count(string = prismfiles[1], pattern = "/")
   pfile <- str_split(string = prismfiles, pattern = coll("/"), numsplits) %>% map(numsplits)
   qa <- str_split(string = pfile, pattern = coll("_"), 6) %>% map(3) %>% unlist()
@@ -218,9 +216,11 @@ ExtractBestPRISM <- function(prismfiles, yr){
     mutate(datarank = 1:n()) %>% 
     filter(datarank == 1)
   
-  # still has issue with leap year
-  if (yr %% 4 != 0) {
-    df2 <- df2[!grepl(pattern = paste0(yr, "0229"), x = df2$dates), ]
+  if (leap == "remove"){
+    # still has issue with leap year
+    if (yr %% 4 != 0) {
+      df2 <- df2[!grepl(pattern = paste0(yr, "0229"), x = df2$dates), ]
+    }
   }
   
   best <- prismfiles[df2$rownum]
