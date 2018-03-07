@@ -9,13 +9,6 @@ rasterOptions(overwrite = FALSE,
               maxmemory = 1e+08,
               tmpdir = "~/REPO/photovoltinism/rastertmp/")
 
-# for parallel simulations with control over seed for reproducibility
-library(doRNG)
-library(foreach) # for parallelized loops
-# library(doMC) # for LINUX
-library(doSNOW) # for WINDOWS
-
-
 library(ggplot2)
 library(viridis)
 library(mapdata)
@@ -26,6 +19,7 @@ theme_set(theme_bw(base_size = 12))
 
 library(gridExtra)
 library(grid)
+
 # results directory
 # newname <- "GCA_WEST_SCDL_2017"
 # newname <- "DCA_SW_2016"
@@ -74,155 +68,6 @@ sites <- data.frame(ID = c("Corvallis, OR", "Richland, WA", "JB Lewis-McChord, W
 # sites$ID <- factor(sites$ID, c("Lovelock", "Delta", "GoldButte", "BigBend", "TopockMarsh"))
 
 
-nsim <- 7
-
-# Galerucella/Diorhabda substages
-# arg1 = list(mu = 97.94, sigma2 = 2241.7, shape = 3.92, nu = 9.57)
-# x = seq(50, 350, length.out = 1000)
-# y = mixsmsn:::dt.ls(x, loc = arg1$mu, sigma2 = arg1$sigma2, shape = arg1$shape, nu = arg1$nu)
-# inputdist <- data.frame(x = x, y = y) %>% 
-#   arrange(x) %>% 
-#   mutate(CDF = cumsum(y/sum(y)))
-# substages <- SubstageDistrib(dist = inputdist, numstage = 7, perc = .99)
-# # To get observations to fit for overwinter adults and F1 eggs, 
-# # overwinter pre-oviposition period is only 50 deg days
-# substages$means <- substages$means + 15
-
-
-# APHALARA SUBSTAGES
-# # skewed t ballpark estimation from Len's OV percentiles
-# arg1 = list(mu = 250, sigma2 = 25000, shape = 3, nu = 10)
-# x = seq(150, 950, length.out = 1000)
-# y = mixsmsn:::dt.ls(x, loc = arg1$mu, sigma2 = arg1$sigma2, shape = arg1$shape, nu = arg1$nu)
-# plot(x, y)
-# inputdist <- data.frame(x = x, y = y) %>% 
-#   arrange(x) %>% 
-#   mutate(CDF = cumsum(y/sum(y)))
-# substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
-
-# choose plausible GDD scenarios
-substages <- data.frame(means = c(180, 230, 280, 330, 380, 430, 480), weights = rep(.142857, 7))
-# nsim <- 1
-# substages <- data.frame(means = 200, weights = 1)
-
-newdirs <- c(
-  # "GCA_NWSMALL_2014", "GCA_NWSMALL_2015", "GCA_NWSMALL_2016",
-             # "GCA_NWSMALL_2014/North", "GCA_NWSMALL_2015/North", "GCA_NWSMALL_2016/North",
-             # "GCA_NWSMALL_2014/South", "GCA_NWSMALL_2015/South", "GCA_NWSMALL_2016/South",
-             # "GCA_NWSMALL_2014/North_sol", "GCA_NWSMALL_2015/North_sol", "GCA_NWSMALL_2016/North_sol",
-             "GCA_NWSMALL_2014/South_sol", "GCA_NWSMALL_2015/South_sol", "GCA_NWSMALL_2016/South_sol")
-for (newname in newdirs){
-  ####################################
-  # Weighted results by substage sizes
-  # Not needed for older model with only one parameter per stage
-  returnwd <- getwd()
-  setwd(newname)
-  
-  f <-list.files()
-  rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
-  rasfiles <- rasfiles[grep(pattern = "sim", x = rasfiles, fixed = TRUE)]
-  
-  # for each sim with unique information to save
-  ls <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1])
-  maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,2])
-  sims <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,3])
-  sims <- gsub(pattern = ".grd", replacement = "", x = sims)
-  
-  # parallel backend for foreach loop
-  if(.Platform$OS.type == "unix"){
-    ncores <- length(ls) * length(maps) / 2
-    registerDoMC(cores = ncores)
-  }else if(.Platform$OS.type == "windows"){
-    ncores <- parallel::detectCores() - 1
-    cl <- makeCluster(ncores)
-    registerDoSNOW(cl)
-  }
-  
-  # run inside foreach now
-  # tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", "run", newname)
-  # dir.create(path = tmppath, showWarnings = FALSE)
-  # #sets temp directory
-  # rasterOptions(tmpdir=file.path(tmppath)) 
-  
-  # this loop takes a lot of time
-  
-  system.time({
-    foreach(i = ls,
-            .packages= "raster",
-            .export = c("rasfiles", "substages")) %:% 
-      foreach(m = maps,
-              .packages = "raster",
-              .export = c("rasfiles", "substages")) %dopar%{
-                # .inorder = FALSE) %do%{
-                # foreach(i = ls, .packages = "raster") %dopar% {
-                tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", i, "run", m)
-                dir.create(path = tmppath, showWarnings = FALSE)
-                #sets temp directory
-                rasterOptions(tmpdir=file.path(tmppath)) 
-                
-                fs <- sort(rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)])
-                fs <- sort(fs[grep(pattern = m, x = fs, fixed = TRUE)])
-                template <- brick(fs[1])[[1]]
-                template[!is.na(template)] <- 0
-                
-                ll <- replicate(nlayers(brick(fs[1])), template)
-                blank <- brick(ll)
-                for (j in 1:length(fs)){
-                  ras_weighted <- brick(fs[j]) * substages[j, 2] # weights for each substage size
-                  blank <- overlay(blank, ras_weighted, fun=function(x,y) x + y)
-                }
-                outras <- writeRaster(blank, filename = paste(i, m, "weighted", sep = "_"),
-                                      overwrite = TRUE)
-                removeTmpFiles(h = 0)
-                unlink(tmppath, recursive = TRUE)
-                
-              }
-  })
-  
-  stopCluster(cl) #WINDOWS
-  setwd(returnwd)
-  
-}
-# # # remove non-weighted results to save disk space
-# # however, need results of each sim to model different photoperiod without total rerun
-# cleanup <- list.files()
-# cleanup <- cleanup[-grep("weighted", x = cleanup)]
-# lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
-
-# mosaic maps together if CONUS
-# maybe hold off on this since its files so large
-# # LINUX
-# ncores <- length(ls)
-# registerDoMC(cores = ncores)
-# WINDOWS
-ncores <- 4
-cl <- makeCluster(ncores)
-registerDoSNOW(cl)
-f <-list.files()
-rasfiles <- f[grep(pattern = "weighted", x = f, fixed = TRUE)]
-lstage <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1])
-
-system.time({
-  foreach(i = lstage,
-         .packages = "raster") %dopar%{
-           fs <- rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)]
-           
-           bricklist <- list()
-           for (m in 1:length(fs)){
-             bricklist[[m]] <- brick(fs[m])
-           }
-           
-           bricklist$filename <- paste(i, "all", sep = "_")
-           bricklist$overwrite <- TRUE
-           test <- do.call(merge, bricklist)
-         }
-  
-  cleanup <- list.files()
-  cleanup <- cleanup[-grep("all", x = cleanup)]
-  lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
-})
-stopCluster(cl) #WINDOWS
-setwd(returnwd)
 #####################
 # quick plots of results
 
@@ -233,8 +78,6 @@ NAvalue(res) <- 200
 res <- brick(paste(newname, "/", "LS4_001_sim1.grd", sep = ""))
 res <- brick(paste(newname, "/", "NumGen_002_weighted.grd", sep = ""))
 
-# res <- crop(res, extent(-125.1,-103.8,40.6,49.2)) #NORTHWEST
-# res <- crop(res, extent(-124.7294, -116.2949, 41.7150, 46.4612)) #OREGON
 plot(res[[365]])
 plot(res[[seq(95, 130, 5)]])
 plot(res[[seq(100, 360, 50)]])

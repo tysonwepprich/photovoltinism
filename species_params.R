@@ -69,11 +69,11 @@ species_params <- function(species, biotype, nsim, model_CDL){
     }
     if (model_CDL == 1){
       coefs <- c(switch(biotype, 
-                        "Big Bend" = c(NA),
-                        "Delta" = c(NA),
-                        "Gold Butte" = c(NA),
-                        "Lovelock" = c(NA),
-                        "Topock Marsh" = c(NA)
+                        "Big Bend" = 13.52,
+                        "Delta" = 14.32,
+                        "Gold Butte" = 14.04,
+                        "Lovelock" = 14.24,
+                        "Topock Marsh" = 12.75
       ), NA, NA)
     }
     # Logistic regression photoperiod
@@ -120,8 +120,8 @@ species_params <- function(species, biotype, nsim, model_CDL){
     }
     if (model_CDL == 1){
       coefs <- c(switch(biotype, 
-                        "N" = 14.7,
-                        "S" = 14.1), NA, NA)
+                        "N" = 14.73,
+                        "S" = 14.12), NA, NA)
     }
     # Logistic regression photoperiod
     # TODO: automatically check if regression models % diapause or reproductive
