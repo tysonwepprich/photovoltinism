@@ -141,7 +141,7 @@ species_params <- function(species, biotype, nsim, model_CDL){
     
     # plot(xdist, ydist)
     # TODO: empirical distribution from data
-  } # end GCA 
+  } # end APHA 
   
   # for any species
   # output parameter file with
