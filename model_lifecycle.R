@@ -4,19 +4,11 @@
 
 # 1. Setup -------
 # packages, options, functions loaded
-library(sp)
-library(rgdal)
-library(raster)
-library(lubridate)
-library(mixsmsn) # needed if using skew distribution for emergence
-library(dplyr)
-library(stringr)
-library(purrr)
-library(prism) # needed to download PRISM data
-
-# for parallel simulations 
-library(foreach) # for parallelized loops
-library(doParallel) # this package can be used across operating systems
+# TODO: find ways to take out dplyr, purrr, mixsmsn functions?
+pkgs <- c("sp", "rgdal", "raster", "lubridate", "mixsmsn", "dplyr",
+          "stringr", "purrr", "prism", "foreach", "doParallel")
+# install.packages(pkgs) # install if needed
+inst = lapply(pkgs, library, character.only = TRUE) # load them
 
 # adjust raster options for your computer, likely this is fine
 rasterOptions(overwrite = FALSE, 
@@ -195,9 +187,9 @@ outfiles <- foreach(sim = 1:nsim,
                 doy <- start_doy + index - 1
                 photo <- RasterPhoto(template, doy, perc_twilight = 25)
               }
-              
+
               # Assign lifestage raster -----
-              # Each raster cell is assigned the lifestage
+              # Each raster cell is assigned to a lifestage
               # These three rasters assign physiological parameters by cell
               ls_ldt <- setValues(lifestage, stage_ldt[getValues(lifestage)])
               ls_udt <- setValues(lifestage, stage_udt[getValues(lifestage)])
@@ -208,6 +200,7 @@ outfiles <- foreach(sim = 1:nsim,
               rm(ls_ldt, ls_udt, tmax, tmin)
               # gc()
               
+              # TODO: wrap inside function for memory efficiency
               # Accumulate degree days ----
               dd_accum <- dd_accum + dd_tmp
               # Calculate lifestage progression: Is accumulation > lifestage requirement
@@ -235,6 +228,7 @@ outfiles <- foreach(sim = 1:nsim,
               }
               
               if (model_CDL == 2){
+                # TODO: wrap inside function for memory efficiency
                 # add logistic regression variation in CDL response
                 sens_mask <- Cond(lifestage %in% photo_sens, 1, 0)
                 # prop_diap <- exp(cdl_b0 + cdl_b1 * photo) /
