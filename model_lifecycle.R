@@ -43,13 +43,13 @@ runparallel <- 1 # 1 for yes, 0 for no
 yr           <- 2017
 start_doy    <- 1
 end_doy      <- 365
-region_param <- "WEST"
+region_param <- "NORTHWEST"
 species      <- "DCA" # GCA/APHA/DCA
 biotype      <- "Topock Marsh" # TODO: add options for each species
 
 # introducing individual variation, tracked with simulation for each substage
 # assign to 1 to match previous model versions
-nsim <- 9 # number of substages/cohorts to approximate emergence distribution
+nsim <- 7 # number of substages/cohorts to approximate emergence distribution
 
 # photoperiod decision inclusion
 # 2 for logistic, 1 for single value CDL, 0 for none
@@ -239,7 +239,7 @@ outfiles <- foreach(sim = 1:nsim,
                 sens_mask <- Cond(lifestage %in% photo_sens, 1, 0)
                 # prop_diap <- exp(cdl_b0 + cdl_b1 * photo) /
                 #   (1 + exp(cdl_b0 + cdl_b1 * photo))
-                prop_diap <- calc(x = photo, fun = function(x){
+                prop_diap <- calc(x = photo, function(x){
                   exp(cdl_b0 + cdl_b1 * x) /
                     (1 + exp(cdl_b0 + cdl_b1 * x))
                 })
@@ -311,14 +311,14 @@ if(exists("cl")){
 }
 
 
-# TODO: rename directory by species/yr/biotype/region
+# TODO: rename results directory by species/yr/biotype/region
 
 # 4. Process results ----- 
 # Simulations combined to approximate continuous distributions
+# Works slowly now (30 minutes), will speed up later
 # Split combined lifestage raster into one/lifestage
 # Mosaic CONUS if needed
 # Remove unused files
-# Could be run later, but would need "params" from above
 
 # library(abind)
 
@@ -367,86 +367,86 @@ for (newname in newdirs){
   # this loop takes a lot of time
   foreach(i = ls,
           .packages= "raster") %dopar%{
-    # foreach(m = maps,
-    #         .packages = "raster") %dopar%{
-              
-              tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", i, "run", m)
-              dir.create(path = tmppath, showWarnings = FALSE)
-              #sets temp directory
-              rasterOptions(tmpdir=file.path(tmppath)) 
-              m <- maps[1]
-              fs <- sort(rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)])
-              fs <- sort(fs[grep(pattern = m, x = fs, fixed = TRUE)])
-              tmp <- brick(fs[1])[[1]]
-              tmp <- tmp + template # NA values added
-              tmp[!is.na(tmp)] <- 0
-              
-              if (i == "diap"){
+            # foreach(m = maps,
+            #         .packages = "raster") %dopar%{
+            m <- maps[1]
+            
+            tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", i, "run", m)
+            dir.create(path = tmppath, showWarnings = FALSE)
+            #sets temp directory
+            rasterOptions(tmpdir=file.path(tmppath)) 
+            fs <- sort(rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)])
+            fs <- sort(fs[grep(pattern = m, x = fs, fixed = TRUE)])
+            tmp <- brick(fs[1])[[1]]
+            tmp <- tmp + template # NA values added
+            tmp[!is.na(tmp)] <- 0
+            
+            if (i == "diap"){
+              ll <- replicate(nlayers(brick(fs[1])), tmp)
+              blank <- brick(ll)
+              for (j in 1:length(fs)){
+                # Diapause, total / 1000
+                ras_weighted <- round(brick(fs[j]) * params$relpopsize[j])
+                blank <- overlay(blank, ras_weighted, fun=function(x,y) x + y)
+              }
+              outras <- writeRaster(blank, filename = paste(i, m, "weighted", sep = "_"),
+                                    overwrite = TRUE, datatype = "INT2U")
+            }
+            
+            # Lifestage
+            if (i == "LS"){
+              for (stg in seq_along(params$stgorder)){
                 ll <- replicate(nlayers(brick(fs[1])), tmp)
                 blank <- brick(ll)
                 for (j in 1:length(fs)){
-                  # Diapause, total / 1000
-                  ras_weighted <- round(brick(fs[j]) * params$relpopsize[j])
+                  ras_weighted <- round(1000 * (brick(fs[j]) == stg) * params$relpopsize[j])
                   blank <- overlay(blank, ras_weighted, fun=function(x,y) x + y)
                 }
-                outras <- writeRaster(blank, filename = paste(i, m, "weighted", sep = "_"),
+                outras <- writeRaster(blank, filename = paste(params$stgorder[stg], m, "weighted", sep = "_"),
                                       overwrite = TRUE, datatype = "INT2U")
               }
-              
-              # Lifestage
-              if (i == "LS"){
-                for (stg in seq_along(params$stgorder)){
-                  ll <- replicate(nlayers(brick(fs[1])), tmp)
-                  blank <- brick(ll)
-                  for (j in 1:length(fs)){
-                    ras_weighted <- round(1000 * (brick(fs[j]) == stg) * params$relpopsize[j])
-                    blank <- overlay(blank, ras_weighted, fun=function(x,y) x + y)
-                  }
-                  outras <- writeRaster(blank, filename = paste(params$stgorder[stg], m, "weighted", sep = "_"),
-                                        overwrite = TRUE, datatype = "INT2U")
+            }
+            
+            
+            if (i == "NumGen"){
+              maxvolt <- max(unlist(lapply(fs,  function(x){
+                max(getValues(brick(x)), na.rm = TRUE)
+              })))
+              for (stg in seq_len(maxvolt)){
+                ll <- replicate(nlayers(brick(fs[1])), tmp)
+                blank <- brick(ll)
+                for (j in 1:length(fs)){
+                  ras_weighted <- round(1000 * (brick(fs[j]) == stg) * params$relpopsize[j])
+                  blank <- overlay(blank, ras_weighted, fun=function(x,y) x + y)
                 }
+                voltname <- paste0("NumGen", stg)
+                outras <- writeRaster(blank, filename = paste(voltname, m, "weighted", sep = "_"),
+                                      overwrite = TRUE, datatype = "INT2U")
               }
-              
-              
-              if (i == "NumGen"){
-                maxvolt <- max(unlist(lapply(fs, FUN = function(x){
-                  max(getValues(brick(x)), na.rm = TRUE)
-                })))
-                for (stg in seq_len(maxvolt)){
-                  ll <- replicate(nlayers(brick(fs[1])), tmp)
-                  blank <- brick(ll)
-                  for (j in 1:length(fs)){
-                    ras_weighted <- round(1000 * (brick(fs[j]) == j) * params$relpopsize[j])
-                    blank <- overlay(blank, ras_weighted, fun=function(x,y) x + y)
-                  }
-                  voltname <- paste0("NumGen", stg)
-                  outras <- writeRaster(blank, filename = paste(voltname, m, "weighted", sep = "_"),
-                                        overwrite = TRUE, datatype = "INT2U")
-                }
-              }
-              
-              
-              # might be faster, test later
-              # test <- BigOverlayWeightedMean(fs, params$relpopsize)
-              #   test <- test + template
-              #   BigOverlayWeightedMean <- function(fs, simsize) {
-              #     require(abind)
-              #     require(raster)
-              #     L <- as.list(fs)
-              #     B <- lapply(seq_along(L), 
-              #                  FUN = function(x, ras, pop){
-              #                   brick(ras[x]) * pop[x]}, ras = L, pop = simsize)
-              #     A <- do.call(abind, c(lapply(B, as.matrix), along=3))
-              #     A <- aperm(A, c(3, 1, 2))
-              #     z <- colSums(A)
-              #     # z <- apply(A, c(1:2), FUN = weighted.mean, w = simsize)
-              #     b <- setValues(brick(fs[1]), z)
-              #   }
-              
-              removeTmpFiles(h = 0)
-              unlink(tmppath, recursive = TRUE)
-              
-            } # end foreach
+            }
+            
+            
+            # might be faster, test later
+            # test <- BigOverlayWeightedMean(fs, params$relpopsize)
+            #   test <- test + template
+            #   BigOverlayWeightedMean <- function(fs, simsize) {
+            #     require(abind)
+            #     require(raster)
+            #     L <- as.list(fs)
+            #     B <- lapply(seq_along(L), 
+            #                  FUN = function(x, ras, pop){
+            #                   brick(ras[x]) * pop[x]}, ras = L, pop = simsize)
+            #     A <- do.call(abind, c(lapply(B, as.matrix), along=3))
+            #     A <- aperm(A, c(3, 1, 2))
+            #     z <- colSums(A)
+            #     # z <- apply(A, c(1:2), FUN = weighted.mean, w = simsize)
+            #     b <- setValues(brick(fs[1]), z)
+            #   }
+            
+            removeTmpFiles(h = 0)
+            unlink(tmppath, recursive = TRUE)
+            
+          } # end foreach
   
   setwd(returnwd)
 } # end newdirs
@@ -454,9 +454,11 @@ for (newname in newdirs){
 stopCluster(cl) #WINDOWS
 # setwd(returnwd)
 
-# quick plot of a few days from weighted raster to check
-test <- brick("NumGen9_001_weighted.grd")
-plot(test[[c(100, 150, 200, 250)]])
+# # quick plot of a few days from weighted raster to check
+# test <- brick(paste(newname, "NumGen5_001_weighted.grd", sep = "/"))
+# test <- brick(paste(newname, "L_001_weighted.grd", sep = "/"))
+# test <- brick(paste(newname, "diap_001_weighted.grd", sep = "/"))
+# plot(test[[c(150, 200, 250, 300)]])
 
 # # mosaic maps together if CONUS
 # # maybe hold off on this since its files so large
