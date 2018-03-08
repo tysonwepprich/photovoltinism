@@ -1,119 +1,146 @@
-# summarize raster results from DDRP models
+# Summarize and map raster results from DDRP models
 
+# 1. Setup -------
+# packages, options, functions loaded
 library(sp)
 library(rgdal)
 library(raster)
-
-rasterOptions(overwrite = FALSE, 
-              chunksize = 1e+07,
-              maxmemory = 1e+08,
-              tmpdir = "~/REPO/photovoltinism/rastertmp/")
-
 library(ggplot2)
 library(viridis)
 library(mapdata)
 library(dplyr)
 library(tidyr)
 library(geofacet)
-theme_set(theme_bw(base_size = 12)) 
-
 library(gridExtra)
 library(grid)
-
-# results directory
-# newname <- "GCA_WEST_SCDL_2017"
-# newname <- "DCA_SW_2016"
-newname <- "APHA_CONUS_SCDL_2016_PHO"
-
+# plotting options
+theme_set(theme_bw(base_size = 14)) 
 source('CDL_funcs.R')
-region_param <- "CONUS"
-gdd_file <- "dailygdd_2016_CONUS.grd"
+source('species_params.R')
 
+# 2. User input -----
+
+# input results directory
+newname <- "DCA_2017_LL"
+
+# Pest Specific, Multiple Life Stage Phenology Model Parameters:
+# model scope
+yr           <- 2017
+start_doy    <- 1
+end_doy      <- 365
+region_param <- "WEST"
+species      <- "DCA" # GCA/APHA/DCA
+biotype      <- "Lovelock" # TODO: add options for each species
+
+# introducing individual variation, tracked with simulation for each substage
+# assign to 1 to match previous model versions
+nsim <- 9 # number of substages/cohorts to approximate emergence distribution
+
+# photoperiod decision inclusion
+# 2 for logistic, 1 for single value CDL, 0 for none
+model_CDL  <- 2 
+
+# Derived parameters -----
 REGION <- assign_extent(region_param = region_param)
+params <- species_params(species, biotype, nsim, model_CDL)
 
 states <- map_data("state", xlim = c(REGION@xmin, REGION@xmax),
                    ylim = c(REGION@ymin, REGION@ymax), lforce = "e")
 names(states)[1:2] <- c("x", "y")
 
-GDD <- brick(gdd_file)
+# # is GDD already calculated if lifestages have same parameters?
+# GDD <- brick(gdd_file)
+# template <- GDD[[1]]
+# template[!is.na(template)] <- 0
+# template <- crop(template, REGION)
 
-template <- GDD[[1]]
-template[!is.na(template)] <- 0
-template <- crop(template, REGION)
-
+# Sites -----
 # coordinates as examples
 # # Galerucella
-sites <- data.frame(ID = c("Corvallis, OR", "Richland, WA", "JB Lewis-McChord, WA", "Palermo, CA",
-                           "Ephrata, WA", "Yakima Training Center, WA", "Camp Rilea, OR",
-                           "Ft Drum, NY", "West Point, NY", "Kellogg LTER, MI",
-                           "The Wilds, OH", "Duluth, MN", "Coeburn, VA", "Mountain Home AFB, ID",
-                           "Quantico MCB, VA", "Hanscom AFB, MA", "Ft Bragg, NC",
-                           "Ogden, UT", "Buckley AFB, CO", "S Portland, OR",
-                           "Sutherlin, OR", "Bellingham, WA"),
-                    x = c(-123.263, -119.283, -122.53, -121.625360, -119.555424, -120.461073,
-                          -123.934759, -75.763566, -73.962210, -85.402260, -81.733314,
-                          -92.158597, -82.466417, -115.865101, -77.311254, -71.276231,
-                          -79.083248, -112.052908, -104.752266, -122.658887,
-                          -123.315854, -122.479482),
-                    y = c(44.564, 46.275, 47.112, 39.426829, 47.318546, 46.680138,
-                          46.122867, 44.055684, 41.388456, 42.404749, 39.829447,
-                          46.728247, 36.943103, 43.044083, 38.513995, 42.457068,
-                          35.173401, 41.252509, 39.704018, 45.470532,
-                          43.387721, 48.756105))
+# sites <- data.frame(ID = c("Corvallis, OR", "Richland, WA", "JB Lewis-McChord, WA", "Palermo, CA",
+#                            "Ephrata, WA", "Yakima Training Center, WA", "Camp Rilea, OR",
+#                            "Ft Drum, NY", "West Point, NY", "Kellogg LTER, MI",
+#                            "The Wilds, OH", "Duluth, MN", "Coeburn, VA", "Mountain Home AFB, ID",
+#                            "Quantico MCB, VA", "Hanscom AFB, MA", "Ft Bragg, NC",
+#                            "Ogden, UT", "Buckley AFB, CO", "S Portland, OR",
+#                            "Sutherlin, OR", "Bellingham, WA"),
+#                     x = c(-123.263, -119.283, -122.53, -121.625360, -119.555424, -120.461073,
+#                           -123.934759, -75.763566, -73.962210, -85.402260, -81.733314,
+#                           -92.158597, -82.466417, -115.865101, -77.311254, -71.276231,
+#                           -79.083248, -112.052908, -104.752266, -122.658887,
+#                           -123.315854, -122.479482),
+#                     y = c(44.564, 46.275, 47.112, 39.426829, 47.318546, 46.680138,
+#                           46.122867, 44.055684, 41.388456, 42.404749, 39.829447,
+#                           46.728247, 36.943103, 43.044083, 38.513995, 42.457068,
+#                           35.173401, 41.252509, 39.704018, 45.470532,
+#                           43.387721, 48.756105))
 
-# # Diorhabda
-# sites <- data.frame(ID = c("TopockMarsh", "Lovelock", "GoldButte", "Delta", "BigBend"),
-#                     x = c(-114.5387, -118.5950, -114.2188, -112.9576, -114.6479),
-#                     y = c(34.7649, 40.04388, 36.73357, 39.14386, 35.10547))
-# sites$ID <- factor(sites$ID, c("Lovelock", "Delta", "GoldButte", "BigBend", "TopockMarsh"))
+# Diorhabda
+sites <- data.frame(ID = c("TopockMarsh", "Lovelock", "GoldButte", "Delta", "BigBend",
+                           "Bighorn", "Ft Carson", "Pinon canyon", "Yuma PG", "Nyssa"),
+                    x = c(-114.5387, -118.5950, -114.2188, -112.9576, -114.6479,
+                          -108.249, -104.756, -103.822, -114.265, -116.984),
+                    y = c(34.7649, 40.04388, 36.73357, 39.14386, 35.10547,
+                          44.998, 38.755, 37.417, 32.6837, 43.876))
+sites$ID <- factor(sites$ID, c("Nyssa", "Bighorn", "Lovelock", "Delta", "Ft Carson", "Pinon canyon",
+                               "GoldButte", "BigBend", "TopockMarsh", "Yuma PG"))
 
 
-#####################
-# quick plots of results
+# Define grid order of sites -----
+# mygrid <- data.frame(
+#   code = c("JBLM", "DRUM", "EPHR", "BOIS", "DULU", "MASS", "WSPT", "YAKI", "RILE",
+#            "UTAH", "KBST", "COEB", "WILD", "CORV", "DENV", "QUAN", "PLMO", "BRAG"),
+#   name = c("JB Lewis-McChord, WA", "Ft Drum, NY", "Ephrata, WA", "Mountain Home AFB, ID",
+#            "Duluth, MN", "Hanscom AFB, MA", "West Point, NY", "Yakima Training Center, WA",
+#            "Camp Rilea, OR", "Ogden, UT", "Kellogg LTER, MI", "Coeburn, VA", "The Wilds, OH",
+#            "Corvallis, OR", "Buckley AFB, CO", "Quantico MCB, VA", "Palermo, CA", "Ft Bragg, NC"),
+#   row = c(1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3),
+#   col = c(1, 5, 2, 3, 4, 6, 6, 2, 1, 3, 4, 5, 4, 1, 3, 6, 2, 5),
+#   stringsAsFactors = FALSE
+# )
+# 
+# mygrid <- data.frame(
+#   code = c("JBLM", "EPHR", "YAKI", "RILE",
+#            "CORV", "PLMO", "PORT", "BELL", "SUTH"),
+#   name = c("JB Lewis-McChord, WA", "Ephrata, WA",
+#            "Yakima Training Center, WA",
+#            "Camp Rilea, OR", 
+#            "Corvallis, OR", "Palermo, CA", "S Portland, OR", 
+#            "Bellingham, WA", "Sutherlin, OR"),
+#   row = c(2, 1, 1, 2, 3, 3, 2, 1, 3),
+#   col = c(3, 2, 3, 1, 1, 3, 2, 1, 2),
+#   stringsAsFactors = FALSE
+# )
+# # geofacet::grid_preview(mygrid)
 
-res <- brick(paste(newname, "/", "LS0_001_sim1.grd", sep = ""))
-res <- brick(paste(newname, "/", "NumGen_001_sim1.grd", sep = ""))
-NAvalue(res) <- 200
 
-res <- brick(paste(newname, "/", "LS4_001_sim1.grd", sep = ""))
-res <- brick(paste(newname, "/", "NumGen_002_weighted.grd", sep = ""))
+
+# 3. Quick default plots ------
+
+res <- brick(paste(newname, "/", "NumGen1_001_weighted.grd", sep = ""))
+# NAvalue(res) <- 200
+
 
 plot(res[[365]])
 plot(res[[seq(95, 130, 5)]])
 plot(res[[seq(100, 360, 50)]])
 plot(res[[seq(200, 300, 20)]])
 plot(res[[seq(180, 280, 20)]])
-################
 
-# diapause/numgen time series
+
+# 4. Diapause/voltinism time series -----
 # shows rapid change, only if within sensitive stage
 # plot CDL as it moves through time and space
 
 res <- brick(gdd_file)
 res <- brick(paste(newname, "/", "LS4_001_weighted.grd", sep = ""))
-# 
-# test <- vector()
-# gdd <- vector()
-# cell <- 100000
-# tmpGDD <- crop(GDD, template)
-# 
-# # first try
-# for (i in 1:nlayers(res)){
-#   test[i] <- res[[i]][cell]
-#   gdd[i] <- tmpGDD[[i]][cell]
-# }
-# plot(cumsum(gdd), test)
 
-# with extract, much easier
 test <- raster::extract(res, y = sites[, 2:3])
 gdd <- raster::extract(GDD, y = sites[, 2:3])
 plot(cumsum(gdd), test)
 
 
 # plot weighted lifestages on same scale
-states <- map_data("state", xlim = c(REGION@xmin, REGION@xmax),
-                   ylim = c(REGION@ymin, REGION@ymax), lforce = "e")
-names(states)[1:2] <- c("x", "y")
 
 names(res) <- paste("d", formatC(1:nlayers(res), width = 3, format = "d", flag = "0"), sep = "")
 df = as.data.frame(res, xy=TRUE)
@@ -125,7 +152,6 @@ df2 <- df1 %>%
   filter(DOY %in% seq(120, 230, 15))
 
 
-logit <- function(p){log(p/(1-p))}
 CDL <- (logit(.5) - 90.092)/-6.115 #Northern
 FindApproxLat4CDL <- function(ras, doy, cdl, degtwil){
   ys <- seq(extent(ras)@ymin, extent(ras)@ymax, .01)
@@ -170,44 +196,7 @@ ggsave(paste("NEW","CDL", ".png", sep = ""),
 
 
 
-######
-# Number of generations when diapause is a %???
-
-
-
-
-######
-mygrid <- data.frame(
-  code = c("JBLM", "DRUM", "EPHR", "BOIS", "DULU", "MASS", "WSPT", "YAKI", "RILE",
-           "UTAH", "KBST", "COEB", "WILD", "CORV", "DENV", "QUAN", "PLMO", "BRAG"),
-  name = c("JB Lewis-McChord, WA", "Ft Drum, NY", "Ephrata, WA", "Mountain Home AFB, ID",
-           "Duluth, MN", "Hanscom AFB, MA", "West Point, NY", "Yakima Training Center, WA",
-           "Camp Rilea, OR", "Ogden, UT", "Kellogg LTER, MI", "Coeburn, VA", "The Wilds, OH",
-           "Corvallis, OR", "Buckley AFB, CO", "Quantico MCB, VA", "Palermo, CA", "Ft Bragg, NC"),
-  row = c(1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3),
-  col = c(1, 5, 2, 3, 4, 6, 6, 2, 1, 3, 4, 5, 4, 1, 3, 6, 2, 5),
-  stringsAsFactors = FALSE
-)
-
-mygrid <- data.frame(
-  code = c("JBLM", "EPHR", "YAKI", "RILE",
-           "CORV", "PLMO", "PORT", "BELL", "SUTH"),
-  name = c("JB Lewis-McChord, WA", "Ephrata, WA",
-           "Yakima Training Center, WA",
-           "Camp Rilea, OR", 
-           "Corvallis, OR", "Palermo, CA", "S Portland, OR", 
-           "Bellingham, WA", "Sutherlin, OR"),
-  row = c(2, 1, 1, 2, 3, 3, 2, 1, 3),
-  col = c(3, 2, 3, 1, 1, 3, 2, 1, 2),
-  stringsAsFactors = FALSE
-)
-# geofacet::grid_preview(mygrid)
-
-newname <- "GCA_NWSMALL_2015"
-gdd_file <- paste(newname, "dailygdd.grd", sep = "/")
-GDD <- brick(gdd_file)
-######
-# Plots of lifestage time series with different photoperiod responses
+# 5. Lifestage time series by biotype CDL --------
 f <-list.files(path = newname, recursive = TRUE, full.names = TRUE)
 rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
 rasfiles <- rasfiles[grep(pattern = "weighted", x = rasfiles, fixed = TRUE)]
@@ -346,8 +335,8 @@ ggsave(paste(newname,"Portland", ".png", sep = ""),
        plot = plt, device = "png", width = 8, height = 6, units = "in")
 
 
-######
-# Plot all lifestages for a particular day
+
+# 6. All lifestages by day ------
 newname <- "new_west_SCDL_100twil"
 # loop to grab all lifestage results on a certain day to plot together
 # save in one giant data.frame to use for plots
@@ -412,7 +401,7 @@ for (i in 1:length(days)){
 }
 
 
-# plot just NumGen
+# 7. Annual voltinism -------
 
 setwd(newname)
 
@@ -430,7 +419,7 @@ for (ps in photosite){
   diap <- diap + template
   threshold <- .75
   volt <- Cond(diap <= threshold, volt, 0)
-  volt2 <- calc(volt, fun = function(x){cummax(x)})
+  volt2 <- calc(volt, function(x){cummax(x)})
   
   df <- as.data.frame(volt2[[days]], xy=TRUE)
   names(df)[3] <- "Voltinism"
@@ -516,7 +505,7 @@ for (i in 1:nrow(params)){
   diap <- diap + template
   threshold <- .75
   volt <- Cond(diap <= threshold, volt, 0)
-  volt2 <- calc(volt, fun = function(x){cummax(x)})
+  volt2 <- calc(volt, function(x){cummax(x)})
   
   df <- as.data.frame(volt2[[days]], xy=TRUE)
   names(df)[3] <- "Voltinism"
@@ -571,7 +560,7 @@ for (nn in newnames){
   
   eggs <- brick(rasfiles[grep(pattern = "LS0", x = rasfiles, fixed = TRUE)])
   eggs <- eggs + template
-  eggs2 <- calc(eggs, fun = function(x){min(which(x == 1))})
+  eggs2 <- calc(eggs, function(x){min(which(x == 1))})
   
   diap <- brick(rasfiles[grep(pattern = "LS4", x = rasfiles, fixed = TRUE)])[[365]]
   diap <- diap + template

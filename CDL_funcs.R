@@ -1,16 +1,19 @@
+# Function definitions----
 
 '%!in%' <- function(x,y)!('%in%'(x,y))
 
 isFALSE <- function (x) {
   identical(x, FALSE)
 }
-########                       BEGINNING function definitions                      #########
+
+logit <- function(p){log(p/(1-p))}
+
 #### if then else raster function [sim. to GRASS r.mapcalc if(x,a,b)]:
 Cond=function(condition, trueValue, falseValue){
   return(condition * trueValue + (!condition)*falseValue)
 }
 
-#####
+
 # Simple way to assign weights for substages
 # Choose number of substages and the decimal (0, 1) of population to include
 # Outputs standard deviations from mean and weights for substage
@@ -178,7 +181,7 @@ CombineMaps <- function(rasfiles, tmpdir, newdir){
 }
 
 
-#####
+
 # Add new extent definitions here for use in models and plots
 assign_extent <- function(region_param = c("CONUS", "NORTHWEST", "NW_SMALL", "OR","EAST", "TEST", "WEST", "SOUTHWEST")){
   REGION <- switch(region_param,

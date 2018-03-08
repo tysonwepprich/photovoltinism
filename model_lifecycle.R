@@ -134,14 +134,10 @@ if ( runparallel == 1){
 outfiles <- foreach(sim = 1:nsim,
                     # outfiles <- foreach(sim = 5, # if some runs don't work, rerun individually
                     .packages= "raster",
-                    # .export = c("SplitMap", "tmaxfiles", "tminfiles",
-                    #             "newname", "params"),
                     .inorder = FALSE) %:% 
   foreach(maps = 1:length(SplitMap),
           # foreach(maps = 3, # if some runs don't work, rerun individually
           .packages = "raster",
-          # .export = c("SplitMap", "tmaxfiles", "tminfiles",
-          #             "newname", "params"),
           .inorder = FALSE) %dopar%{
             # .inorder = FALSE) %do%{
             
