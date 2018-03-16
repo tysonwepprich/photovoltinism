@@ -21,20 +21,20 @@ source('species_params.R')
 # 2. User input -----
 
 # input results directory
-newname <- "DCA_2017_LL"
+newname <- "GCA_2017_S"
 
 # Pest Specific, Multiple Life Stage Phenology Model Parameters:
 # model scope
 yr           <- 2017
 start_doy    <- 1
 end_doy      <- 365
-region_param <- "WEST"
-species      <- "DCA" # GCA/APHA/DCA
-biotype      <- "Lovelock" # TODO: add options for each species
+region_param <- "NORTHWEST"
+species      <- "GCA" # GCA/APHA/DCA
+biotype      <- "S" # TODO: add options for each species
 
 # introducing individual variation, tracked with simulation for each substage
 # assign to 1 to match previous model versions
-nsim <- 9 # number of substages/cohorts to approximate emergence distribution
+nsim <- 7 # number of substages/cohorts to approximate emergence distribution
 
 # photoperiod decision inclusion
 # 2 for logistic, 1 for single value CDL, 0 for none
@@ -117,7 +117,7 @@ sites$ID <- factor(sites$ID, c("Nyssa", "Bighorn", "Lovelock", "Delta", "Ft Cars
 
 # 3. Quick default plots ------
 
-res <- brick(paste(newname, "/", "NumGen1_001_weighted.grd", sep = ""))
+res <- brick(paste(newname, "/", "NumGen2_001_weighted.grd", sep = ""))
 # NAvalue(res) <- 200
 
 
@@ -591,3 +591,37 @@ tmpplt <- ggplot(data = outdf, aes(x, y, fill = Diap)) +
 tmpplt
 ggsave(paste0("APHA_Eggs_GDD", ".png", sep = ""),
        plot = tmpplt, device = "png", width = 10, height = 8, units = "in")
+
+
+
+
+# 8. Simple plot of voltinism and diapause -----
+doy <- 365
+newname <- "GCA_2017_S"
+f <- "NumGen1_001_weighted.grd"
+res <- brick(paste(newname, "/", f, sep = ""))
+df <- as.data.frame(res[[doy]], xy=TRUE)
+df$var <- stringr::str_split_fixed(string = f, pattern = "_", n = 3)[1]
+res <- brick(paste(newname, "/", "diap_001_weighted.grd", sep = ""))
+df1 <- as.data.frame(res[[doy]], xy=TRUE)
+df1$var <- "diapause"
+
+outdf <- bind_rows(df, df1) %>% 
+  mutate(proportion = layer.365 / 1000)
+
+
+tmpplt <- ggplot(data = outdf, aes(x, y, fill = proportion)) +
+  geom_raster() +
+  geom_polygon(data = states, aes(group = group), fill = NA, color = "black", inherit.aes = TRUE, size = .3) +
+  theme_bw() +
+  coord_fixed(1.3) +
+  # scale_fill_manual(values = voltcols) +
+  scale_fill_viridis(na.value = "white", begin = 0, end = 1, discrete = FALSE) +
+  ggtitle(paste0("Diapause and generation at DOY ", doy), subtitle = newname) +
+  guides(color = FALSE) +
+  facet_wrap( ~ var, ncol = 1)
+tmpplt
+
+ggsave(paste0(newname, df$var[1], ".png"),
+       plot = tmpplt, device = "png", width = 10, height = 12, units = "in")
+

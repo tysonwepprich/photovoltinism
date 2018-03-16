@@ -35,9 +35,9 @@ runparallel <- 1 # 1 for yes, 0 for no
 yr           <- 2017
 start_doy    <- 1
 end_doy      <- 365
-region_param <- "NORTHWEST"
-species      <- "DCA" # GCA/APHA/DCA
-biotype      <- "Topock Marsh" # TODO: add options for each species
+region_param <- "NORTHWEST" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
+species      <- "GCA" # GCA/APHA/DCA
+biotype      <- "N" # TODO: add options for each species, N or S for APHA and GCA
 
 # introducing individual variation, tracked with simulation for each substage
 # assign to 1 to match previous model versions
@@ -242,11 +242,11 @@ outfiles <- foreach(sim = 1:nsim,
               # memory management
               rm(sens_mask, prop_diap, tmpdiap)
               # gc()
+              
               # TODO:
               # Add section to combine simulations into weighted values before stacking
               # Get one raster per day per 3 outputs first, fewer files to deal with later
-              # But how to parallelize?
-              
+
               # stack each days raster
               if (!exists("LS_stack")){
                 LS_stack <- stack(lifestage)
@@ -318,6 +318,7 @@ template <- crop(raster(tminfiles[1]), REGION)
 template[!is.na(template)] <- 0
 dataType(template) <- "INT2U"
 
+# Input directories with results
 newdirs <- c("DCA_2017_LL", "DCA_2017_TM")
 for (newname in newdirs){
   # Weighted results by substage sizes
@@ -491,6 +492,6 @@ stopCluster(cl) #WINDOWS
 # make sure you have the correct directory!
 cleanup <- list.files(newdirs[2], full.names = TRUE)
 cleanup <- cleanup[-grep("weighted", x = cleanup)]
-lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
+# lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
 
 

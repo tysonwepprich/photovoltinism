@@ -96,8 +96,8 @@ TriDD=function(tmax, tmin, LDT, UDT){
 # using ropensci 'prism' package to access webservice
 # downloads entire CONUS, so files are large
 
-startdate <- "2018-02-21"
-enddate <- "2018-03-01"
+startdate <- "2018-02-28"
+enddate <- "2018-03-14"
 yr <- year(ymd(startdate))
 
 # need to set download directory
@@ -162,7 +162,7 @@ gdddf <- readRDS("gdddf.rds")
 
 
 # Map range of GDD at different sites, 100-150DD dates
-cutoffday <- 60 # day of year when PRISM observations switch to forecasts
+cutoffday <- 73 # day of year when PRISM observations switch to forecasts
 
 # Add new predictions for current year
 preddf <- gdddf %>% 
@@ -230,7 +230,7 @@ plt <- ggplot(resdf, aes(x = reorder(ID, meanstart), ymin = start, ymax = end, g
 
 plt
 
-ggsave(filename = "Galerucella_daterange2.png", plot = plt,
+ggsave(filename = "Galerucella_daterange3.png", plot = plt,
        device = "png", width = 16, height = 10, units = "in")
 
 
