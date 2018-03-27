@@ -162,7 +162,7 @@ gdddf <- readRDS("gdddf.rds")
 
 
 # Map range of GDD at different sites, 100-150DD dates
-cutoffday <- 73 # day of year when PRISM observations switch to forecasts
+cutoffday <- 77 # day of year when PRISM observations switch to forecasts
 
 # Add new predictions for current year
 preddf <- gdddf %>% 
