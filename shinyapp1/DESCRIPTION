@@ -1,7 +1,5 @@
-Title: Retirement simulation
+Title: Photothermograph simulation
 License: MIT
-Author: Michael Kapler <thesystematicinvestor@gmail.com>, Joe Cheng <joe@rstudio.com>
-AuthorUrl: http://systematicinvestor.wordpress.com/
-Tags: simluation finance application-layout bootstrap-theme
+Author: Tyson Wepprich <tyson.wepprich@gmail.com>
 DisplayMode: Normal
 Type: Shiny
