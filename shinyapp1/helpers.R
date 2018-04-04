@@ -191,38 +191,40 @@ run_sims <- function(pars = NA, gdd = NA){
   return(results)
 }
 
+'%!in%' <- function(x,y)!('%in%'(x,y))
+
 
 plot_sim <- function(results, gdd){
-  
+  # on hold: selecting plot years after simulation
+  # if(is.null(years)){
+  #   results <- results
+  #   gdd <- gdd
+  # }else{
+  #   results <- results %>% 
+  #     filter(year %in% years)
+  #   gdd <- gdd %>% 
+  #     filter(year %in% years)
+  # }
   # Marginal histograms ----
   mean_cdl <- mean(results$cdl, na.rm = TRUE)
   maxgdd <- max(gdd$accumdegday, na.rm = TRUE)
   maxphoto <- max(c(max(gdd$daylength, na.rm = TRUE), max(results$cdl, na.rm = TRUE)))
   minphoto <- min(gdd$daylength, na.rm = TRUE)
   
-  cdl_hist <- results %>% 
-    ungroup() %>% 
-    dplyr::select(cdl) %>%
-    filter(complete.cases(.)) %>% 
-    mutate(breaks = cut(cdl, breaks=seq(min(cdl),max(cdl),length.out = 20), 
-                        labels=seq(min(cdl),max(cdl), length.out = 20)[-1], 
-                        include.lowest=TRUE)) %>% 
-    mutate(daylength = as.numeric(as.character(breaks))) %>%
-    group_by(daylength) %>% 
-    summarise(n = n()) %>% 
+  cdl_hist1 <- hist(results$cdl[-which(is.na(results$cdl))], breaks = 20, plot = FALSE)
+  cdl_hist <- data.frame(daylength = cdl_hist1$breaks[1:(length(cdl_hist1$breaks)-1)],
+                         n = cdl_hist1$counts) 
+  cdl_hist <- cdl_hist %>% 
     mutate(accumdegday = -50 + 50 * n/max(n))
+  cdl_interval <- cdl_hist$daylength[2] - cdl_hist$daylength[1]
   
-  sens_hist <- results %>% 
-    ungroup() %>% 
-    dplyr::select(accumdegday) %>%
-    filter(complete.cases(.)) %>% 
-    mutate(breaks = cut(accumdegday, breaks = seq(min(accumdegday), max(accumdegday), length.out = 100),
-                        labels = seq(min(accumdegday), max(accumdegday), length.out = 100)[-1],
-                        include.lowest = TRUE)) %>% 
-    mutate(accumdegday = as.numeric(as.character(breaks))) %>% 
-    group_by(accumdegday) %>% 
-    summarise(n = n()) %>% 
+  sens_hist1 <- hist(results$accumdegday[which(is.na(results$accumdegday) == FALSE)], breaks = 100, plot = FALSE)
+  sens_hist <- data.frame(accumdegday = sens_hist1$breaks[1:(length(sens_hist1$breaks)-1)],
+                          n = sens_hist1$counts) 
+  sens_hist <- sens_hist %>% 
     mutate(daylength = minphoto - .5 + .5 * n/max(n))
+  sens_interval <- sens_hist$accumdegday[2] - sens_hist$accumdegday[1]
+  
   
   # Photothermograph ----
   theme_set(theme_bw(base_size = 16)) 
@@ -233,17 +235,66 @@ plot_sim <- function(results, gdd){
     coord_cartesian(xlim = c(-50, maxgdd + 100), ylim = c(minphoto - .5, maxphoto), expand = FALSE) +
     scale_color_viridis(discrete = TRUE, name = "Year", option = "D") +
     guides(color = guide_legend(reverse=FALSE)) +
-    geom_segment(data=cdl_hist, size=2.5, show.legend=FALSE,
-                 aes(x=-50, xend=accumdegday, y=daylength, yend=daylength), inherit.aes = FALSE) +
-    geom_segment(data=sens_hist, size=2.5, show.legend=FALSE,
-                 aes(x=accumdegday, xend=accumdegday, y=minphoto - .5, yend=daylength), inherit.aes = FALSE) +
+    geom_rect(data=cdl_hist, show.legend=FALSE,
+              aes(xmin = -50, xmax = accumdegday, ymin = daylength, ymax = daylength+cdl_interval), inherit.aes = FALSE) +
+    geom_rect(data=sens_hist, show.legend=FALSE,
+              aes(xmin=accumdegday, xmax=accumdegday + sens_interval, ymin=minphoto - .5, ymax=daylength), inherit.aes = FALSE) +
     geom_hline(yintercept = mean_cdl, linetype = "dashed", size = 1, alpha = .5) +
-    # geom_rug(data = results, aes(x = accumdegday), color = "gray", alpha = .1) +
-    # geom_rug(data = results, aes(y = cdl), color = "gray", alpha = .1) +
     ggtitle("Photothermographs with critical photoperiod\nand simulated sensitive stage emergence") +
     xlab("Accumulated degree-days") +
-    ylab("Daylength (hours)")
+    ylab("Daylength (hours)") +
+    theme(legend.position = c(0.9, 0.85))
+  
   plt
+  
+  
+}
+
+
+plot_conseq <- function(results, gdd){
+  maxgdd <- max(gdd$accumdegday, na.rm = TRUE)
+  
+  # Voltinism cost ----
+  conseq <- results %>%
+    mutate(consequence = ifelse(reproduce == TRUE & fit_diapause_gdd == TRUE & diapause_before_frost == TRUE,
+                                "reproduce, F1 fits",
+                                # ifelse(reproduce == TRUE & fit_diapause_gdd == TRUE & diapause_before_frost == FALSE,
+                                #        "reproduce, F1 dies from frost",
+                                ifelse(reproduce == TRUE & (fit_diapause_gdd == FALSE | diapause_before_frost == FALSE),
+                                       "reproduce, F1 doesn't fit",
+                                       "diapause")),
+           date = as.Date(yday, origin=as.Date("2015-12-31")))
+  
+  
+  
+  
+  plt2 <- ggplot(conseq, aes(x = accumdegday, y = consequence, 
+                             fill = consequence, height = ..count..)) +
+    # geom_density_ridges(scale = .9, rel_min_height=0.01, stat = "density") +
+    geom_density_ridges(scale = .95, rel_min_height=0.001, stat = "binline", bins = 100) +
+    scale_fill_viridis(discrete = TRUE, alpha = .5) +
+    # scale_x_continuous(limits = c(0, NA), expand = c(0, 0)) +
+    scale_y_discrete(expand = c(0.1, .1)) +
+    ggtitle("Diapause decisions and consequences") +
+    xlab("Accumulated degree-days") +
+    ylab("Frequency of simulations") +
+    coord_cartesian(xlim = c(-50, maxgdd + 100), expand = FALSE) +
+    theme(legend.position = c(0.75, 0.9),
+          axis.text.y=element_blank()) +
+    guides(fill = guide_legend(reverse=T))
+  plt2
+  
+  
+  # plt3 <- ggplot(conseq, aes(x = date, y = consequence, 
+  #                            fill = consequence, height = ..count..)) +
+  #   # geom_density_ridges(scale = .9, rel_min_height=0.01, stat = "density") +
+  #   geom_density_ridges(scale = .95, rel_min_height=0.001, stat = "binline", bins = 50) +
+  #   scale_fill_viridis(discrete = TRUE, alpha = .5) +
+  #   scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+  #   # scale_x_continuous(limits = c(0, NA), expand = c(0, 0)) +
+  #   scale_y_discrete(expand = c(0.1, .1)) 
+  # # facet_wrap(~year, nrow = 2)
+  # plt3
   
   
 }

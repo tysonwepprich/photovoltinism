@@ -7,6 +7,9 @@
 # Note, I have 2018 PRISM data with 10-year-average forecasts from Len's server (so not reproducible)
 # 5-year-average forecasts are made with the code below.
 
+# TODO: Update option rather than reanalyzing all years from scratch, need to 
+# add a week at a time for current year only.
+
 library(ggplot2)
 library(viridis)
 library(dplyr)
@@ -96,8 +99,8 @@ TriDD=function(tmax, tmin, LDT, UDT){
 # using ropensci 'prism' package to access webservice
 # downloads entire CONUS, so files are large
 
-startdate <- "2018-02-28"
-enddate <- "2018-03-14"
+startdate <- "2018-03-28"
+enddate <- "2018-04-03"
 yr <- year(ymd(startdate))
 
 # need to set download directory
@@ -113,7 +116,8 @@ get_prism_dailys("tmax", minDate = startdate,
 # Site based growing degree-days from PRISM
 # Also can do this on rasters to make maps
 outlist <- list()
-for (yr in years){
+# for (yr in years){
+yr <- 2018 # just calculate current year for speed
   prism_path <- paste(base_path, yr, sep = "/")
   
   # Search pattern for PRISM daily temperature grids. Load them for processing.
@@ -152,17 +156,19 @@ for (yr in years){
     mutate(yday = unlist(map(stringr::str_split(string = yday, pattern = coll("_"), 2), 2)),
            year = yr)
   outlist[[length(outlist)+1]] <- gdd 
-}
+# }
 
-gdddf <- bind_rows(outlist)
+# gdddf <- bind_rows(outlist)
 
-saveRDS(gdddf, "gdddf.rds")
+# saveRDS(gdddf, "gdddf.rds")
 
-gdddf <- readRDS("gdddf.rds")
+gdddf <- readRDS("gdddf.rds") %>% 
+  filter(year != 2018) %>% 
+  bind_rows(outlist[[1]])
 
 
 # Map range of GDD at different sites, 100-150DD dates
-cutoffday <- 77 # day of year when PRISM observations switch to forecasts
+cutoffday <- 93 # day of year when PRISM observations switch to forecasts
 
 # Add new predictions for current year
 preddf <- gdddf %>% 
@@ -204,7 +210,8 @@ resdf <- gdddf %>%
          bound = c("start", "end")) %>% 
   dplyr::select(ID, year, date, bound) %>% 
   tidyr::spread(bound, date) %>% 
-  filter(ID %in% levels(gdddf$ID)[c(1, 3, 4, 5, 10, 12, 15, 16, 17, 21, 22, 25, 26, 28, 30)]) %>%  # East and West
+  filter(ID %in% levels(gdddf$ID)[c(3, 12, 15, 28, 30)]) %>%  # Military
+  # filter(ID %in% levels(gdddf$ID)[c(1, 3, 4, 5, 10, 12, 15, 16, 17, 21, 22, 25, 26, 28, 30)]) %>%  # East and West
   # filter(ID %in% levels(gdddf$ID)[c(1, 3, 5, 10, 15, 17, 21, 22, 25, 26, 30)]) %>%  # Just NW sites
   group_by(ID) %>% 
   mutate(meanstart = mean(start))
@@ -216,22 +223,29 @@ resdf <- gdddf %>%
 
 
 theme_set(theme_bw(base_size = 16)) 
+my_title <- expression(paste("Date range forecast for ", 
+                             italic("Galerucella calmariensis")
+                             ))
 
 
 plt <- ggplot(resdf, aes(x = reorder(ID, meanstart), ymin = start, ymax = end, group = as.factor(year), color = as.factor(year))) +
   # geom_jitter(size = 3, width = .15) +
-  geom_linerange(position = position_dodge(width = .6), size = 2) +
+  geom_linerange(position = position_dodge(width = .6), size = 2.5) +
   scale_color_viridis(discrete = TRUE, name = "Year", option = "D") +
   scale_y_date(date_breaks = "1 week", date_labels = "%b-%d") +
   coord_flip() +
-  ggtitle("Date range for predicted Galerucella\noverwintering adult emergence (100-150 degree-days)") +
-  xlab("Sites ordered by\nmean start of emergence") +
-  guides(color = guide_legend(reverse=TRUE)) 
+  ggtitle(my_title, subtitle = "spring oviposition (100-150 degree-days)") +
+  xlab(NULL) +
+  # xlab("Sites ordered by\nmean start of emergence") +
+  guides(color = guide_legend(reverse=TRUE)) +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5))
+
 
 plt
 
-ggsave(filename = "Galerucella_daterange3.png", plot = plt,
-       device = "png", width = 16, height = 10, units = "in")
+ggsave(filename = "Galerucella_daterange4.png", plot = plt,
+       device = "png", width = 10, height = 5, units = "in")
 
 
 # output data to csv for import into Google Calendar

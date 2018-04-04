@@ -9,7 +9,7 @@ library(dplyr)
 library(purrr)
 library(daymetr)
 library(ggridges)
-
+library(shinycssloaders)
 source('helpers.R')
 
 # prefix is used to define the two scenarios to simulate
@@ -17,8 +17,8 @@ renderInputs <- function(prefix) {
   wellPanel(
     fluidRow(
       column(6,
-             sliderInput(paste0(prefix, "_", "nsim"), "Number of simulations:", min = 1, max = 500, value = 100, step = 1),
-             sliderInput(paste0(prefix, "_", "year_range"), "Range of observations (in Years):", min = 1980, max = 2016, value = c(2005, 2010), step = 1),
+             sliderInput(paste0(prefix, "_", "nsim"), "Number of individuals to simulate:", min = 1, max = 500, value = 100, step = 1),
+             sliderInput(paste0(prefix, "_", "year_range"), "Range of observations (in Years):", min = 1980, max = 2016, value = c(2005, 2010), step = 1, sep = ""),
              numericInput(paste0(prefix, "_", "lat"), "Site latitude (in decimal units, limited to North America):", min = 6.6, max = 83.3, value = 44.56, step = .1),
              numericInput(paste0(prefix, "_", "lon"), "Site longitude (in decimal units, limited to North America):", min = -178.2, max = -49, value = -123.26, step = .1),
              sliderInput(paste0(prefix, "_", "dev_temp"), "Temperature range for development (in Celsius):", min = -10, max = 45.0, value = c(10.0, 37.0), step = 0.1),
@@ -38,8 +38,10 @@ renderInputs <- function(prefix) {
       )
     ),
     p(actionButton(paste0(prefix, "_", "recalc"),
-                   "Re-run simulation", icon("refresh"))
+                   "Run simulation", icon("refresh"))
     )
+    
+    
     # TODO: reactive options for plots once simulation runs
     # see conditionalPanel function
   )
@@ -57,7 +59,7 @@ ui <- fluidPage(
             ),
             
             # Application title
-            tags$h2("Development, voltinism and photoperiod-based diapause decisions simulated for biocontrol insects"),
+            tags$h2("Development, voltinism and photoperiod-based diapause decisions simulated for insects"),
             p("An adaptation of the model from ",
               tags$a(href="https://esajournals.onlinelibrary.wiley.com/doi/abs/10.1890/14-2071.1", "Grevstad & Coop 2015"),
               "with individual variation in critical photoperiod and development requirements"),
@@ -73,12 +75,27 @@ ui <- fluidPage(
               column(6, renderInputs("a")),
               column(6, renderInputs("b"))
             ),
+            # fluidRow(
+            #   column(6, uiOutput("a_year_plot")
+            #   ),
+            #   column(6, uiOutput("b_year_plot")
+            #   )
+            # ),
             fluidRow(
               column(6,
-                     plotOutput("a_distPlot", height = "600px")
+                     withSpinner(plotOutput("a_distPlot", height = "600px"))
               ),
               column(6,
-                     plotOutput("b_distPlot", height = "600px")
+                     withSpinner(plotOutput("b_distPlot", height = "600px"))
+              )
+            ),
+            br(),
+            fluidRow(
+              column(6,
+                     withSpinner(plotOutput("a_conseqPlot", height = "600px"))
+              ),
+              column(6,
+                     withSpinner(plotOutput("b_conseqPlot", height = "600px"))
               )
             )
   )
@@ -136,67 +153,105 @@ server <- function(input, output, session) {
   # Delay simulation until action button pressed
   # If accum_gdd or nsim or traits modified AND action button = run simulations and output plots
   
-  # valuesA <- reactiveValues()
+  # output$a_distPlot <- renderPlot({
+  #   if (input$a_recalc == 0){
+  #     return()
+  #   }
+  #   isolate({ 
+  #     temp_a <- get_temp_data(userinput = get_temp_params("a"))
+  #     gdd_a <- get_gdd_data(temp_data = temp_a, userinput = get_gdd_params("a"))
+  #     results_a <- run_sims(pars = get_sim_params("a"), gdd = gdd_a)
+  #     
+  #     # # debug without reactive
+  #     # temp_a <- get_temp_data(userinput = list("year_range" = c(2005, 2010), "lat" = 45, "lon" = -100))
+  #     # gdd_a <- get_gdd_data(temp_data = temp_a, userinput = list("dev_temp" = c(10, 30)))
+  #     # results_a <- run_sims(pars = as.list(pars), gdd = gdd_a)
   # 
-  # # Break into steps
-  # 
-  # # If year/lat/lon modified, download daymet data and calc photoperiod
-  # valuesA$temp_data <- reactive(do.call(get_temp_data, get_temp_params("a")))
-  # 
-  # # If temp data or ldt/udt modified, calc accum gdd = accum_gdd
-  # 
-  # valuesA$gdd_data <- reactive(do.call(get_gdd_data, c(valuesA()$temp_data, get_gdd_params("a"))))
-  # 
-  # 
-  # valuesA$resultsA <- reactive(do.call(run_sims, c(get_sim_params("a"), valuesA()$gdd_data)))
-  # 
-  # 
-  output$a_distPlot <- renderPlot({
-    if (input$a_recalc == 0)
-      return()
-    
-    isolate({ 
-      temp_a <- get_temp_data(userinput = get_temp_params("a"))
-      gdd_a <- get_gdd_data(temp_data = temp_a, userinput = get_gdd_params("a"))
-      results_a <- run_sims(pars = get_sim_params("a"), gdd = gdd_a)
-      
-      # # debug without reactive
-      # temp_a <- get_temp_data(userinput = list("year_range" = c(2005, 2010), "lat" = 45, "lon" = -100))
-      # gdd_a <- get_gdd_data(temp_data = temp_a, userinput = list("dev_temp" = c(10, 30)))
-      # results_a <- run_sims(pars = as.list(pars), gdd = gdd_a)
-      # 
-      
-      plot_sim(results = results_a, gdd = gdd_a) 
-      })
-  })
-  
-  
-  # simB <- eventReactive(input$b_recalc, {
-  #   do.call(simulate_nav, getParams("b"))
-  #   })
-  # 
-  # simA <- eventReactive(input$a_recalc, {
-  #   sim_params <- getParams("a")
-  #   
-  #   tempdata <- 
-  #   
+  #     })
+  #   plot_sim(results = results_a, gdd = gdd_a) 
   #   
   # })
   
+  # Scenario A
   
+  temp_a <- eventReactive(input$a_recalc, {
+    result <- get_temp_data(userinput = get_temp_params("a"))
+    return(result)
+  })
   
-  # Expression that plot NAV paths. The expression
-  # is wrapped in a call to renderPlot to indicate that:
-  #
-  #  1) It is "reactive" and therefore should be automatically
-  #     re-executed when inputs change
-  #  2) Its output type is a plot
-  #
-  # output$a_distPlot <- renderPlot({
-  #   plot_sim(simA())
+  gdd_a <- eventReactive(input$a_recalc, {
+    result <- get_gdd_data(temp_data = temp_a(), userinput = get_gdd_params("a"))
+    return(result)
+  })
+  
+  results_a <- eventReactive(input$a_recalc, {
+    result <- run_sims(pars = get_sim_params("a"), gdd = gdd_a())
+    return(result)
+  })
+  
+  output$a_distPlot <- renderPlot({
+    if (input$a_recalc == 0){
+      return()
+    }
+    
+    # on hold: selecting plot years after simulation
+    # a_plot_yrs <- reactive({ifelse(exists("input$a_plot_yrs") == FALSE, 
+    #                      unique(results_a()$year),
+    #                      input$a_plot_yrs)})
+    # isolate({ 
+      plot_sim(results = results_a(), gdd = gdd_a()) 
+    # })
+  })
+  # # on hold: selecting plot years after simulation
+  # # Issues with selecting years for plots
+  # # Below, none selected upon start
+  # output$a_year_plot <- renderUI({
+  #   yrs <- unique(results_a()$year)
+  #   selectizeInput("a_plot_yrs", "Years to plot", 
+  #                  choices = yrs, multiple = TRUE)
+  # })
+  output$a_conseqPlot <- renderPlot({
+    if (input$a_recalc == 0){
+      return()
+    }
+    plot_conseq(results = results_a(), gdd = gdd_a()) 
+  })
+  
+  # Scenario B
+  
+  temp_b <- eventReactive(input$b_recalc, {
+    result <- get_temp_data(userinput = get_temp_params("b"))
+    return(result)
+  })
+  
+  gdd_b <- eventReactive(input$b_recalc, {
+    result <- get_gdd_data(temp_data = temp_b(), userinput = get_gdd_params("b"))
+    return(result)
+  })
+  
+  results_b <- eventReactive(input$b_recalc, {
+    result <- run_sims(pars = get_sim_params("b"), gdd = gdd_b())
+    return(result)
+  })
+  
+  output$b_distPlot <- renderPlot({
+    if (input$b_recalc == 0){
+      return()
+    }
+    
+    plot_sim(results = results_b(), gdd = gdd_b()) 
+  })
+
+  output$b_conseqPlot <- renderPlot({
+    if (input$b_recalc == 0){
+      return()
+    }
+    plot_conseq(results = results_b(), gdd = gdd_b()) 
+  })
 }
 
-
+#TODO: adjust ggridge axis to match gdd on fig1
+# get rid of y axis labels, redundant with legend
 
 # Run the app ----
 shinyApp(ui = ui, server = server)
