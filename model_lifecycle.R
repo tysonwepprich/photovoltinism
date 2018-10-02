@@ -35,9 +35,9 @@ runparallel <- 1 # 1 for yes, 0 for no
 yr           <- 2017
 start_doy    <- 1
 end_doy      <- 365
-region_param <- "NORTHWEST"
+region_param <- "WEST" # TEST, NW_SMALL, OR, NORTHWEST, CONUS as other options from small to large
 species      <- "DCA" # GCA/APHA/DCA
-biotype      <- "Topock Marsh" # TODO: add options for each species
+biotype      <- "Lovelock" # TODO: add options for each species, see species_params.R
 
 # introducing individual variation, tracked with simulation for each substage
 # assign to 1 to match previous model versions
@@ -322,7 +322,7 @@ template <- crop(raster(tminfiles[1]), REGION)
 template[!is.na(template)] <- 0
 dataType(template) <- "INT2U"
 
-newdirs <- c("DCA_2017_LL", "DCA_2017_TM")
+newdirs <- c("DCA_2017_LL2")
 for (newname in newdirs){
   # Weighted results by substage sizes
   # Not needed for older model with only one parameter per stage
@@ -493,8 +493,8 @@ stopCluster(cl) #WINDOWS
 # 5. Clean up ------
 # remove non-weighted results to save disk space
 # make sure you have the correct directory!
-cleanup <- list.files(newdirs[2], full.names = TRUE)
+cleanup <- list.files(newdirs[1], full.names = TRUE)
 cleanup <- cleanup[-grep("weighted", x = cleanup)]
-lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
+# lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
 
 
