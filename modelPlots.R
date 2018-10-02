@@ -21,15 +21,15 @@ source('species_params.R')
 # 2. User input -----
 
 # input results directory
-newname <- "GCA_2017_S"
+newname <- "DCA_SW_2016"
 
 # Pest Specific, Multiple Life Stage Phenology Model Parameters:
 # model scope
-yr           <- 2017
+yr           <- 2016
 start_doy    <- 1
 end_doy      <- 365
-region_param <- "NORTHWEST"
-species      <- "GCA" # GCA/APHA/DCA
+region_param <- "SOUTHWEST"
+species      <- "DCA" # GCA/APHA/DCA
 biotype      <- "S" # TODO: add options for each species
 
 # introducing individual variation, tracked with simulation for each substage
@@ -405,8 +405,11 @@ for (i in 1:length(days)){
 
 setwd(newname)
 
+# Diorhabda
+sites <- sites[1:5, ]
+
 days <- 365
-f <-list.files(path = newname, recursive = TRUE, full.names = TRUE)
+f <-list.files(recursive = TRUE, full.names = TRUE)
 rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
 rasfiles <- rasfiles[grep(pattern = "weighted", x = rasfiles, fixed = TRUE)]
 photosite <- rasfiles[grep(pattern = "LS4", x = rasfiles, fixed = TRUE)]
@@ -414,6 +417,9 @@ photosite <- rasfiles[grep(pattern = "LS4", x = rasfiles, fixed = TRUE)]
 for (ps in photosite){
   sitename <- stringr::str_split_fixed(string = ps, pattern = "/", n = 3)[2]
   volt <- brick(rasfiles[grep(pattern = "NumGen", x = rasfiles, fixed = TRUE)])
+  template <- volt[[1]]
+  template[!is.na(template)] <- 0
+  
   volt <- volt + template
   diap <- brick(ps)
   diap <- diap + template
@@ -424,11 +430,14 @@ for (ps in photosite){
   df <- as.data.frame(volt2[[days]], xy=TRUE)
   names(df)[3] <- "Voltinism"
   
+  
   # discrete voltinism classes for visual
   # df$Voltinism <- round(df$Voltinism/.5)*.5
   df$Voltinism <- round(df$Voltinism)
+  maxvolt <- max(df$Voltinism, na.rm = TRUE)
   df$Voltinism <- as.factor(as.character(df$Voltinism))
-  
+  df <- df %>% 
+    filter(!is.na(Voltinism))
   sites_plt <- sites
   sites_plt$show <- "A"
   sites_plt$show[sites_plt$ID == sitename] <- "B"
@@ -437,8 +446,8 @@ for (ps in photosite){
     geom_raster() +
     geom_polygon(data = states, aes(group = group), fill = NA, color = "black", inherit.aes = TRUE, size = .1) +
     theme_bw() +
-    coord_fixed(1.3) +
-    scale_fill_viridis(na.value = "white", begin = 0, end = 1, discrete = TRUE) + 
+    coord_fixed(1.3, xlim = c(-120.1925, -108.2658), ylim = c(31.51583, 42.3175)) +
+    scale_fill_viridis(na.value = "white", begin = 0, end = maxvolt * .125, discrete = TRUE) + 
     geom_point(data = sites_plt, aes(x = x, y = y, color = show), size = 2, inherit.aes = FALSE) +
     scale_color_manual(values=c("white", "red")) +
     ggtitle(paste(sitename, "photoperiod response", sep = " ")) +

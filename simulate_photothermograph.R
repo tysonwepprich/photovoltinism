@@ -26,19 +26,19 @@ source('CDL_funcs.R')
 nsim <- 100
 lat <- 44.56400
 lon <- -123.26300 
-startyear <- 2005
-endyear <- 2015
+startyear <- 2018
+endyear <- 2018
 # TODO: 3 biocontrol species parameters set for you with biotypes
 # custom species params
 ldt <- 10
 udt <- 37
 cdl <- 15.5
-emerg_dd <- 100
+emerg_dd <- 105
 gen_dd <- 367 # egg to teneral adult
 povip_dd <- 126 # pre-ovip period
 ovip_dd <- 40 # guessing here, use poisson process
 cdl_sd <- .5
-emerg_dd_sd <- 15
+emerg_dd_sd <- 5
 gen_dd_sd <- 30
 povip_dd_sd <- 10
 lambda <- 3.5 # population growth rate function of multiple eggs laid per adult, plus random mortality
@@ -63,6 +63,19 @@ gdd <- temp$data %>%
   arrange(yday) %>% 
   mutate(accumdegday = cumsum(degday),
          daylength = photoperiod(lat, yday))
+
+# Current year forecast ----
+
+# import data from daterange code
+resdf <- readRDS("currentyrtemp.rds")
+
+gdd <- resdf %>% 
+  filter(yday < 350) %>% 
+  arrange(yday) %>% 
+  mutate(accumdegday = cumsum(DD),
+         daylength = photoperiod(44.564, yday),
+         year = 2018)
+
 
 
 
@@ -96,7 +109,7 @@ SimLifecycle <- function(pars, nsim, yr, gdd){
            diapause_before_frost = firstfrost > (accumdegday + genlength1[rowid]),
            emerge_after_frost = lastfrost < sens_dd) %>% 
     ungroup() %>%
-    select(-rowid)
+    dplyr::select(-rowid)
   dflist[[1]] <- df
   
   # Maximal potential voltinism without photoperiod
@@ -155,7 +168,7 @@ SimLifecycle <- function(pars, nsim, yr, gdd){
 
   simresults <- bind_rows(dflist) %>% 
     left_join(voltinism, by = "index") %>% 
-    select(-`row_number()`, -eggs, -chooserow)
+    dplyr::select(-`row_number()`, -eggs, -chooserow)
 
   return(simresults)  
 }
@@ -164,9 +177,10 @@ SimLifecycle <- function(pars, nsim, yr, gdd){
 # Simulate ----
 sims <- expand.grid(year = unique(gdd$year))
 results <- sims %>% 
-  group_by(year) %>% 
+  group_by(year) %>%
   do(SimLifecycle(pars, nsim, .$year, gdd))
 
+# results <- SimLifecycle(pars, nsim, 2018, gdd)
 
 # Marginal histograms ----
 mean_cdl <- mean(results$cdl, na.rm = TRUE)
@@ -176,7 +190,7 @@ minphoto <- min(gdd$daylength)
 
 cdl_hist <- results %>% 
   ungroup() %>% 
-  select(cdl) %>%
+  dplyr::select(cdl) %>%
   filter(complete.cases(.)) %>% 
   mutate(breaks = cut(cdl, breaks=seq(min(cdl),max(cdl),length.out = 20), 
                       labels=seq(min(cdl),max(cdl), length.out = 20)[-1], 
@@ -188,7 +202,7 @@ cdl_hist <- results %>%
 
 sens_hist <- results %>% 
   ungroup() %>% 
-  select(accumdegday) %>%
+  dplyr::select(accumdegday) %>%
   filter(complete.cases(.)) %>% 
   mutate(breaks = cut(accumdegday, breaks = seq(min(accumdegday), max(accumdegday), length.out = 100),
                       labels = seq(min(accumdegday), max(accumdegday), length.out = 100)[-1],
@@ -224,7 +238,7 @@ plt
 # so doesn't match up with voltinism cost plots below
 # also mortality makes attempted generation wonky
 res1 <- results %>% 
-  select(year, index, maxvolt, gen) %>% 
+  dplyr::select(year, index, maxvolt, gen) %>% 
   group_by(year, index) %>% 
   summarise(maxvolt = maxvolt[1],
             attemptvolt = max(gen, na.rm = TRUE))
