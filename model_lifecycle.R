@@ -35,9 +35,9 @@ runparallel <- 1 # 1 for yes, 0 for no
 yr           <- 2017
 start_doy    <- 1
 end_doy      <- 365
-region_param <- "WEST" # TEST, NW_SMALL, OR, NORTHWEST, CONUS as other options from small to large
-species      <- "DCA" # GCA/APHA/DCA
-biotype      <- "Lovelock" # TODO: add options for each species, see species_params.R
+region_param <- "NORTHWEST" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
+species      <- "GCA" # GCA/APHA/DCA
+biotype      <- "N" # TODO: add options for each species, N or S for APHA and GCA
 
 # introducing individual variation, tracked with simulation for each substage
 # assign to 1 to match previous model versions
@@ -134,14 +134,10 @@ if ( runparallel == 1){
 outfiles <- foreach(sim = 1:nsim,
                     # outfiles <- foreach(sim = 5, # if some runs don't work, rerun individually
                     .packages= "raster",
-                    # .export = c("SplitMap", "tmaxfiles", "tminfiles",
-                    #             "newname", "params"),
                     .inorder = FALSE) %:% 
   foreach(maps = 1:length(SplitMap),
           # foreach(maps = 3, # if some runs don't work, rerun individually
           .packages = "raster",
-          # .export = c("SplitMap", "tmaxfiles", "tminfiles",
-          #             "newname", "params"),
           .inorder = FALSE) %dopar%{
             # .inorder = FALSE) %do%{
             
@@ -246,11 +242,11 @@ outfiles <- foreach(sim = 1:nsim,
               # memory management
               rm(sens_mask, prop_diap, tmpdiap)
               # gc()
+              
               # TODO:
               # Add section to combine simulations into weighted values before stacking
               # Get one raster per day per 3 outputs first, fewer files to deal with later
-              # But how to parallelize?
-              
+
               # stack each days raster
               if (!exists("LS_stack")){
                 LS_stack <- stack(lifestage)
@@ -322,7 +318,9 @@ template <- crop(raster(tminfiles[1]), REGION)
 template[!is.na(template)] <- 0
 dataType(template) <- "INT2U"
 
-newdirs <- c("DCA_2017_LL2")
+
+# Input directories with results
+newdirs <- c("DCA_2017_LL", "DCA_2017_TM")
 for (newname in newdirs){
   # Weighted results by substage sizes
   # Not needed for older model with only one parameter per stage

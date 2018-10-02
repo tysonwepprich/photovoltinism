@@ -114,6 +114,31 @@ plt <- ggplot(dat, aes(x = day, y = diapause)) +
   facet_wrap(~site, ncol = 2)
 plt
 
+# all on same graph
+dat$reproduce <-  1 - dat$diapause
+
+dat$sitelat <- paste(dat$site, round(dat$lat, 1), sep = ": ")
+dat$sitelat  <- with(dat, reorder(sitelat, lat))
+
+newdat <- newdat %>% 
+  left_join(dat[, c("site", "sitelat", "lat")])
+newdat$sitelat  <- with(newdat, reorder(sitelat, lat))
+
+
+plt <- ggplot(dat, aes(x = day, y = reproduce, color = sitelat)) +
+  geom_jitter(width = .2, height = 0) +
+  geom_line(data = newdat, aes(x = day, y = 1 - pred, 
+                               group = sitelat, color = sitelat)) +
+  scale_color_viridis(discrete = TRUE, begin = .9, end = .1) +
+  guides(colour = guide_legend(reverse=T, title = "Population: latitude")) +
+  xlab("Hours of daylight") +
+  ylab("Percent reproductive")
+plt
+theme_set(theme_bw(base_size = 16)) 
+
+# ggsave(filename = "dca_photo.png", plot = plt,
+#        device = "png", width = 8, height = 5, units = "in")
+
 # fedat <- sitemods %>% 
 #   unnest(preds)
   
