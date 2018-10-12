@@ -1,6 +1,6 @@
 pkgs <- c("lubridate", "dplyr", "tidyr",
           "stringr", "purrr", "ggplot2", "viridis")
-install.packages(pkgs) # install if needed
+# install.packages(pkgs) # install if needed
 inst = lapply(pkgs, library, character.only = TRUE) # load them
 
 theme_set(theme_bw(base_size = 18)) 

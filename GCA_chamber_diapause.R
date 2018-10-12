@@ -3,7 +3,7 @@ pkgs <- c("lubridate", "dplyr", "tidyr", "lme4",
 # install.packages(pkgs) # install if needed
 inst = lapply(pkgs, library, character.only = TRUE) # load them
 
-theme_set(theme_bw(base_size = 18)) 
+theme_set(theme_bw(base_size = 20)) 
 
 
 dat <- read.csv("C:/Users/wepprict/Desktop/galerucella_chamber_diapause_2018.csv", header = TRUE)
@@ -53,9 +53,12 @@ newdat <- newdat %>% filter(temperature == 21)
 
 # plot shows raw data for all chambers and model prediction for 21C chambers by population
 plt <- ggplot(dat, aes(x = photoperiod, y = perc_repro)) +
-  geom_point(aes(color = emerg_group, shape = as.factor(temperature)), alpha = .5) +
-  # scale_color_viridis(discrete = TRUE) +
+  geom_point(aes(color = emerg_group, shape = as.factor(temperature)), size = 4, alpha = .5) +
+  scale_color_discrete(name = "Petri dish") +
+  scale_shape_discrete(name = "Temperature") +
   geom_line(data = newdat, aes(x = photoperiod, y = pred)) +
+  xlab("Daylength in chamber") +
+  ylab("Percent reproductive") +
   facet_wrap(~population, ncol = 3)
 plt
 
@@ -130,15 +133,21 @@ linedat$photoperiod <- linedat$zday * attr(alldat$zday, 'scaled:scale') + attr(a
 linedat$temperature <- linedat$ztemp * attr(alldat$ztemp, 'scaled:scale') + attr(alldat$ztemp, 'scaled:center')
 
 linedat$temperature <- round(linedat$temperature)
+linedat <- linedat %>% filter(temperature == 26)
 
 
 # plot shows raw data for all chambers and model prediction for 21C chambers by population
 plt <- ggplot(alldat, aes(x = photoperiod, y = perc_repro)) +
-  geom_point(aes(color = as.factor(Year), shape = as.factor(temperature)), alpha = .5) +
+  geom_point(aes(color = as.factor(Year), shape = as.factor(temperature)), size = 4, alpha = .5) +
   # scale_color_viridis(discrete = TRUE) +
-  geom_line(data = newdat, aes(x = photoperiod, y = pred), size = 1.5) +
-  geom_line(data = linedat, aes(x = photoperiod, y = pred, 
+  # geom_line(data = newdat, aes(x = photoperiod, y = pred), size = 1.5) +
+  geom_line(data = linedat, aes(x = photoperiod, y = pred,
                                 group = interaction(Year, temperature),
                                 color = as.factor(Year)))+
+  scale_color_discrete(name = "Year") +
+  scale_shape_discrete(name = "Temperature") +
+  # geom_line(data = newdat, aes(x = photoperiod, y = pred)) +
+  xlab("Daylength in chamber") +
+  ylab("Percent reproductive") +
   facet_wrap(~population, ncol = 3)
 plt

@@ -318,6 +318,7 @@ template <- crop(raster(tminfiles[1]), REGION)
 template[!is.na(template)] <- 0
 dataType(template) <- "INT2U"
 
+
 # Input directories with results
 newdirs <- c("DCA_2017_LL", "DCA_2017_TM")
 for (newname in newdirs){
@@ -490,7 +491,7 @@ stopCluster(cl) #WINDOWS
 # 5. Clean up ------
 # remove non-weighted results to save disk space
 # make sure you have the correct directory!
-cleanup <- list.files(newdirs[2], full.names = TRUE)
+cleanup <- list.files(newdirs[1], full.names = TRUE)
 cleanup <- cleanup[-grep("weighted", x = cleanup)]
 # lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
 
