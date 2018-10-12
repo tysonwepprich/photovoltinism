@@ -2,7 +2,7 @@ pkgs <- c("lubridate", "dplyr", "tidyr", "lme4",
           "stringr", "purrr", "ggplot2", "viridis")
 # install.packages(pkgs) # install if needed
 inst = lapply(pkgs, library, character.only = TRUE) # load them
-
+source("CDL_funcs.R")
 theme_set(theme_bw(base_size = 18)) 
 
 
@@ -44,6 +44,13 @@ summary(mod)
 AIC(mod1, mod2)
 
 
+# with just sites moving south through arizona
+datriver <- dat %>%
+  filter(lat < 37.5 & lon < -110)
+# no random effects of sites, assumed to be similar/explained by latitude
+mod1 <- glm(perc_repro ~ (zday + zlat + zyear)^2, weights = total, data = datriver, family = binomial)
+
+
 
 # model predictions for plotting
 newdat <- expand.grid(list(zday = seq(-2.5, 2.5, length.out = 100),
@@ -77,3 +84,30 @@ plt <- ggplot(newdat, aes(x = photoperiod, y = pred, group = site, color = zlat)
   geom_line(size = 1.5) +
   scale_color_viridis(discrete = FALSE)
 plt
+
+
+# where are the sites?
+sites <- dat %>% 
+  dplyr::select(site, lat, lon) %>% 
+  distinct() %>% 
+  data.frame()
+sites
+
+library(mapdata)
+library(raster)
+library(ggrepel)
+region_param <- "WEST"
+
+# Derived parameters -----
+REGION <- assign_extent(region_param = region_param)
+
+states <- map_data("state", xlim = c(REGION@xmin, REGION@xmax),
+                   ylim = c(REGION@ymin, REGION@ymax), lforce = "e")
+names(states)[1:2] <- c("x", "y")
+mp <- ggplot(data = sites, aes(x = lon, y = lat)) +
+  geom_point() +
+  geom_text_repel(aes(label = site)) +
+  geom_polygon(data = states, aes(x = x, y = y, group = group), fill = NA, color = "black", size = .1) +
+  coord_fixed(1.3) 
+mp
+
