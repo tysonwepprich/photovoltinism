@@ -6,7 +6,7 @@
 # packages, options, functions loaded
 # TODO: find ways to take out dplyr, purrr, mixsmsn functions?
 pkgs <- c("sp", "rgdal", "raster", "lubridate", "mixsmsn", "dplyr",
-          "stringr", "purrr", "prism", "foreach", "doParallel")
+          "stringr", "purrr", "prism", "foreach", "doParallel", "daymetr", "ncdf4")
 # install.packages(pkgs) # install if needed
 inst = lapply(pkgs, library, character.only = TRUE) # load them
 
@@ -21,10 +21,14 @@ source('species_params.R')
 
 
 # 2. User input -----
-# directory with a year of PRISM tmax and tmin files
-prism_path <- "prismDL/2017"
-# prism_path <- "/data/PRISM/2014"
-download_prism <- 0 # 1 if you need to download PRISM data first (20 minutes)
+# directory with daily tmax and tmin raster files
+# PRISM: need to download CONUS which takes a lot of space
+# Daymet: can download what you need with bounding box
+weather_path <- "daymet"
+download_daily_weather <- 1 # 1 if you need to download PRISM/Daymet data first (20 minutes)
+weather_data_source <- "daymet" # or 'prism'
+
+
 # directory to hold temporary raster results
 myrastertmp <- "~/REPO/photovoltinism/rastertmp/"
 # run simulations with parallel processing
@@ -48,10 +52,11 @@ nsim <- 7 # number of substages/cohorts to approximate emergence distribution
 model_CDL  <- 2 
 
 
-# PRISM download ----
-# using ropensci 'prism' package to access webservice
+# Weather download ----
+# using ropensci 'prism' package to access webservice, or 'daymetr' package
 # downloads entire CONUS, so files are large
-if (download_prism == 1){
+if (download_daily_weather == 1){
+  if (weather_data_source == "prism"){
   startdate <- as.Date(start_doy - 1, origin = paste0(yr, "-01-01"))
   enddate <- as.Date(end_doy - 1, origin = paste0(yr, "-01-01"))
   
@@ -63,6 +68,24 @@ if (download_prism == 1){
                    maxDate = enddate, keepZip = FALSE)
   get_prism_dailys("tmax", minDate = startdate, 
                    maxDate = enddate, keepZip = FALSE)
+  }
+  if (weather_data_source == "daymet"){
+    bbox <- assign_extent(region_param)
+    # download ncss doesn't work with windows because no OpenDap functioning
+    download_daymet_ncss(location = c(bbox@xmin, bbox@ymax, bbox@xmax, bbox@ymin),
+                         start = yr,
+                         end = yr,
+                         frequency = "daily",
+                         param = c("tmin","tmax"),
+                         path = weather_path,
+                         silent = FALSE)
+    # this works with windows, IDK why
+    download_daymet_tiles(tiles = 11207,
+                          start = 2012,
+                          end = 2012,
+                          param = "tmin",
+                          path = "daymet")
+  }
 }
 
 
