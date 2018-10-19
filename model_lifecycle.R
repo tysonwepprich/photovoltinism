@@ -5,7 +5,7 @@
 # 1. Setup -------
 # packages, options, functions loaded
 # TODO: find ways to take out dplyr, purrr, mixsmsn functions?
-pkgs <- c("sp", "rgdal", "raster", "lubridate", "mixsmsn", "dplyr",
+pkgs <- c("sp", "rgdal", "rgeos", "raster", "lubridate", "mixsmsn", "dplyr",
           "stringr", "purrr", "prism", "foreach", "doParallel", "daymetr", "ncdf4")
 # install.packages(pkgs) # install if needed
 inst = lapply(pkgs, library, character.only = TRUE) # load them
@@ -62,7 +62,7 @@ if (download_daily_weather == 1){
   
   # need to set download directory
   # options(prism.path = paste("prismDL", yr, sep = "/"))
-  options(prism.path = prism_path)
+  options(prism.path = weather_path)
   
   get_prism_dailys("tmin", minDate = startdate, 
                    maxDate = enddate, keepZip = FALSE)
@@ -70,21 +70,19 @@ if (download_daily_weather == 1){
                    maxDate = enddate, keepZip = FALSE)
   }
   if (weather_data_source == "daymet"){
+    
     bbox <- assign_extent(region_param)
-    # download ncss doesn't work with windows because no OpenDap functioning
-    download_daymet_ncss(location = c(bbox@xmin, bbox@ymax, bbox@xmax, bbox@ymin),
-                         start = yr,
-                         end = yr,
-                         frequency = "daily",
-                         param = c("tmin","tmax"),
-                         path = weather_path,
-                         silent = FALSE)
-    # this works with windows, IDK why
-    download_daymet_tiles(tiles = 11207,
-                          start = 2012,
-                          end = 2012,
-                          param = "tmin",
-                          path = "daymet")
+    # check if files exist?
+    
+    # download tiles
+    download_daymet_tiles(location = c(bbox@ymax, bbox@xmin, bbox@ymin, bbox@xmax), tiles = NULL,
+                          start = 1980, end = 1980, path = weather_path, param = "tmin",
+                          silent = FALSE, force = FALSE)
+    
+    # download north american files by year and variable
+    url_tmax <- paste0("https://thredds.daac.ornl.gov/thredds/fileserver/ornldaac/1328/", yr, "/daymet_v3_tmax_", yr, "_na.nc4")
+    download.file(url_tmax, destfile = paste(weather_path, yr, sep = "/"))
+    
   }
 }
 
