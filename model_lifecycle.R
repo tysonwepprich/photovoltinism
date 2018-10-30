@@ -24,9 +24,9 @@ source('species_params.R')
 # directory with daily tmax and tmin raster files
 # PRISM: need to download CONUS which takes a lot of space
 # Daymet: can download what you need with bounding box
-weather_path <- "daymet"
-download_daily_weather <- 1 # 1 if you need to download PRISM/Daymet data first (20 minutes)
-weather_data_source <- "daymet" # or 'prism'
+weather_path <- "prismDL/2017"
+download_daily_weather <- 0 # 1 if you need to download PRISM/Daymet data first (20 minutes)
+weather_data_source <-"prism" #  "daymet" # or 'prism'
 
 
 # directory to hold temporary raster results
@@ -39,7 +39,7 @@ runparallel <- 1 # 1 for yes, 0 for no
 yr           <- 2017
 start_doy    <- 1
 end_doy      <- 365
-region_param <- "NORTHWEST" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
+region_param <- "TEST" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
 species      <- "GCA" # GCA/APHA/DCA
 biotype      <- "N" # TODO: add options for each species, N or S for APHA and GCA
 
@@ -98,11 +98,11 @@ params <- species_params(species, biotype, nsim, model_CDL)
 # Add option for GDD pre-calculated (if all stages have same traits)
 # send file names to for loop
 pattern = paste("(PRISM_tmin_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
-tminfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
+tminfiles <- list.files(path = weather_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
 tminfiles <- ExtractBestPRISM(tminfiles, yr, leap = "keep")[start_doy:end_doy]
 
 pattern = paste("(PRISM_tmax_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
-tmaxfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
+tmaxfiles <- list.files(path = weather_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
 tmaxfiles <- ExtractBestPRISM(tmaxfiles, yr, leap = "keep")[start_doy:end_doy]
 
 # make template for all subsequent rasters to ensure same extent
