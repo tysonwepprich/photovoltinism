@@ -28,7 +28,6 @@ weather_path <- "daymet"
 download_daily_weather <- 0 # 1 if you need to download PRISM/Daymet data first (20 minutes)
 weather_data_source <- "daymet" # or 'prism'
 
-
 # directory to hold temporary raster results
 myrastertmp <- "~/REPO/photovoltinism/rastertmp/"
 # run simulations with parallel processing
@@ -42,6 +41,7 @@ end_doy      <- 365
 region_param <- "ALL" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
 species      <- "APHA" # GCA/APHA/DCA
 biotype      <- "S" # TODO: add options for each species, N or S for APHA and GCA
+
 
 # introducing individual variation, tracked with simulation for each substage
 # assign to 1 to match previous model versions
@@ -110,6 +110,7 @@ if (weather_data_source == "daymet"){
   tminfile <- brick(paste0(weather_path, "/tmin_", yr, ".grd"))
   
 }
+
 # make template for all subsequent rasters to ensure same extent
 # TODO: test that tmin and tmax have same result
 

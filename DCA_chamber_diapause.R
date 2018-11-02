@@ -48,6 +48,8 @@ dat$zlat <- as.numeric(zlat[, 1])
 mod <- glmer(perc_repro ~ zday + year + (1|rowid), weights = total, data = dat, family = binomial)
 mod1 <- glmer(perc_repro ~ (zday + zlat + zyear)^2 + (1 + zday|site), weights = total, data = dat, family = binomial)
 mod2 <- glmer(perc_repro ~ zday + zlat + zday:zlat + (1 + zday|site), weights = total, data = dat, family = binomial)
+mod3 <- glmer(perc_repro ~ photoperiod + lat + (1 + photoperiod|site), weights = total, data = dat, family = binomial)
+
 summary(mod)
 AIC(mod1, mod2)
 
@@ -59,7 +61,7 @@ newdat <- expand.grid(list(zday = seq(-2.5, 2.5, length.out = 100),
                            zyear = unique(dat$zyear),
                            site = unique(dat$site)))
 uniqdat <- dat %>% 
-  dplyr::select(site, zlat) %>% 
+  dplyr::select(site, zlat, lat) %>% 
   distinct()
 
 newdat <- left_join(newdat, uniqdat)
@@ -80,6 +82,34 @@ cdl <- newdat %>%
 cdl$sitelat <- factor(cdl$sitelat, levels = cdl$sitelat[order(cdl$cdl, decreasing = TRUE)])
 newdat$sitelat <- factor(newdat$sitelat, levels = cdl$sitelat[order(cdl$cdl, decreasing = TRUE)])
 dat$sitelat <- factor(dat$sitelat, levels = cdl$sitelat[order(cdl$cdl, decreasing = TRUE)])
+
+# COEFFICIENTS for each site for the lifecycle model
+# # glm doesn't fit well without scale lat and photoperiod, will need to scale covariates in simulations in same way before predicting
+# uniqdat <- uniqdat %>% arrange(site)
+# cdl_b0 <- fixef(mod2)[1] + ranef(mod2)$site[, 1] + fixef(mod2)[3] * uniqdat$zlat
+# cdl_b1 <- fixef(mod2)[2] + fixef(mod2)[4] * uniqdat$zlat + ranef(mod2)$site[, 2]
+# 
+# i <- 3
+# photo <- seq(10, 18, length.out = 100)
+# zphoto <- (photo - attr(zday, 'scaled:center')) / attr(zday, 'scaled:scale')
+# prop_diap <-  1 - (exp(cdl_b0[i] + cdl_b1[i] * zphoto) /
+#     (1 + exp(cdl_b0[i] + cdl_b1[i] * zphoto)))
+# plot(photo, prop_diap)
+
+# using unscaled variables in model to make predictions from raster easier
+uniqdat <- uniqdat %>% arrange(site)
+cdl_b0 <- fixef(mod3)[1] + ranef(mod3)$site[, 1] + fixef(mod3)[3] * uniqdat$lat
+cdl_b1 <- fixef(mod3)[2]
+
+i <- 12
+photo <- seq(10, 18, length.out = 100)
+prop_diap <-  1 - (exp(cdl_b0[i] + cdl_b1 * photo) /
+                     (1 + exp(cdl_b0[i] + cdl_b1 * photo)))
+plot(photo, prop_diap)
+
+uniqdat$cdl_b0 <- cdl_b0
+uniqdat$cdl_b1 <- cdl_b1
+
 
 # plot shows raw data for all chambers and model prediction for 21C chambers by population
 plt <- ggplot(dat, aes(x = photoperiod, y = perc_repro)) +
@@ -193,4 +223,9 @@ mp
 
 ggsave("DCA_sitemap.png",
        plot = mp, device = "png", width = 9, height = 9, units = "in")
+
+
+
+
+
 

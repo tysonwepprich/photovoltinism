@@ -44,3 +44,17 @@ plt <- ggplot(dat, aes(x = Treat, y = 1 -fraction, group = Pop, color = Pop)) +
   geom_point() +
   geom_line(data = pred, aes(x = Treat, y = pred, group = Pop, color = Pop))
 plt
+
+
+
+
+findInt <- function(model, value) {
+  function(x) {
+    predict(model, data.frame(Treat=x), type="response") - value
+  }
+}
+
+uniroot(findInt(modS, .5), range(datS$Treat))$root
+uniroot(findInt(modS, .95), range(datS$Treat))$root
+uniroot(findInt(modS, .05), range(datS$Treat))$root
+
