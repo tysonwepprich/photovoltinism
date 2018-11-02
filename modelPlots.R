@@ -10,26 +10,26 @@ library(viridis)
 library(mapdata)
 library(dplyr)
 library(tidyr)
-library(geofacet)
+# library(geofacet) # didn't install correctly
 library(gridExtra)
 library(grid)
 # plotting options
-theme_set(theme_bw(base_size = 14)) 
+theme_set(theme_bw(base_size = 20)) 
 source('CDL_funcs.R')
 source('species_params.R')
 
 # 2. User input -----
 
 # input results directory
-newname <- "DCA_SW_2016"
+newname <- "APHA_2017_ALL"
 
 # Pest Specific, Multiple Life Stage Phenology Model Parameters:
 # model scope
-yr           <- 2016
+yr           <- 2017
 start_doy    <- 1
 end_doy      <- 365
-region_param <- "SOUTHWEST"
-species      <- "DCA" # GCA/APHA/DCA
+region_param <- "ALL"
+species      <- "APHA" # GCA/APHA/DCA
 biotype      <- "S" # TODO: add options for each species
 
 # introducing individual variation, tracked with simulation for each substage
@@ -47,6 +47,26 @@ params <- species_params(species, biotype, nsim, model_CDL)
 states <- map_data("state", xlim = c(REGION@xmin, REGION@xmax),
                    ylim = c(REGION@ymin, REGION@ymax), lforce = "e")
 names(states)[1:2] <- c("x", "y")
+
+us <- getData("GADM",country="USA",level=1)
+canada <- getData("GADM",country="CAN",level=1)
+
+states <- crop(us, REGION)
+provs <- crop(canada, REGION)
+
+if (!file.exists("./src/ref/ne_50m_admin_1_states_provinces_lakes/ne_50m_admin_1_states_provinces_lakes.dbf")){
+  download.file(file.path('http://www.naturalearthdata.com/http/',
+                          'www.naturalearthdata.com/download/50m/cultural',
+                          'ne_50m_admin_1_states_provinces_lakes.zip'), 
+                f <- tempfile())
+  unzip(f, exdir = "./src/ref/ne_50m_admin_1_states_provinces_lakes")
+  rm(f)
+}
+
+region <- readOGR("./src/ref/ne_50m_admin_1_states_provinces_lakes", 'ne_50m_admin_1_states_provinces_lakes', encoding='UTF-8')
+reg.points = fortify(region, region="name_en")
+reg.df = left_join(reg.points, region@data, by = c("id" = "name_en"))
+
 
 # # is GDD already calculated if lifestages have same parameters?
 # GDD <- brick(gdd_file)
@@ -141,6 +161,10 @@ plot(cumsum(gdd), test)
 
 
 # plot weighted lifestages on same scale
+res <- brick(paste(newname, "/", "diap_all.grd", sep = ""))
+template <- res[[1]]
+template[!is.na(template)] <- 0
+
 
 names(res) <- paste("d", formatC(1:nlayers(res), width = 3, format = "d", flag = "0"), sep = "")
 df = as.data.frame(res, xy=TRUE)
@@ -149,10 +173,10 @@ df1 <- df %>%
   dplyr::mutate(DOY = as.numeric(gsub(pattern = "d", replacement = "", x = .$DOY))) %>% 
   dplyr::filter(DOY %in% seq(100, 365, 5))
 df2 <- df1 %>% 
-  filter(DOY %in% seq(120, 230, 15))
+  filter(DOY %in% seq(190, 270, 10))
 
 
-CDL <- (logit(.5) - 90.092)/-6.115 #Northern
+CDL <- (logit(.5) - params$CDL[2])/params$CDL[3]
 FindApproxLat4CDL <- function(ras, doy, cdl, degtwil){
   ys <- seq(extent(ras)@ymin, extent(ras)@ymax, .01)
   hours <- photoperiod(lat = ys, doy = doy, p = degtwil)
@@ -172,7 +196,7 @@ photo_df <- data.frame(DOY = seq(100, 365, 5))
 photo_df <- photo_df %>% 
   rowwise() %>% 
   mutate(lat = FindApproxLat4CDL(template, DOY, CDL, 6)) %>% 
-  filter(DOY %in% seq(120, 230, 15))
+  filter(DOY %in% seq(190, 270, 10))
 
 
 plt <- ggplot(df2, aes(x, y)) +
@@ -180,7 +204,7 @@ plt <- ggplot(df2, aes(x, y)) +
   scale_fill_viridis(na.value = "white") + 
   geom_polygon(data = states, aes(group = group), fill = NA, color = "black", size = .1) +
   geom_hline(data = photo_df, aes(yintercept = lat), color = "white") +
-  facet_wrap(~DOY, nrow = 2) +
+  facet_wrap(~DOY, nrow = 3) +
   coord_fixed(1.3) +
   # annotate("text", x = -73, y = 30, label = "Earliest substage") +
   theme(axis.line=element_blank(),axis.text.x=element_blank(),
@@ -606,29 +630,34 @@ ggsave(paste0("APHA_Eggs_GDD", ".png", sep = ""),
 
 # 8. Simple plot of voltinism and diapause -----
 doy <- 365
-newname <- "GCA_2017_S"
-f <- "NumGen1_001_weighted.grd"
+newname <- "APHA_2017_ALL"
+f <- "NumGen1_all.grd"
 res <- brick(paste(newname, "/", f, sep = ""))
 df <- as.data.frame(res[[doy]], xy=TRUE)
 df$var <- stringr::str_split_fixed(string = f, pattern = "_", n = 3)[1]
-res <- brick(paste(newname, "/", "diap_001_weighted.grd", sep = ""))
+res <- brick(paste(newname, "/", "diap_all.grd", sep = ""))
 df1 <- as.data.frame(res[[doy]], xy=TRUE)
 df1$var <- "diapause"
 
 outdf <- bind_rows(df, df1) %>% 
   mutate(proportion = layer.365 / 1000)
 
+reg.df <- reg.df %>% 
+  filter(long >= min(outdf$x), long <= max(outdf$x),
+         lat >= min(outdf$y), lat <= max(outdf$y))
 
 tmpplt <- ggplot(data = outdf, aes(x, y, fill = proportion)) +
   geom_raster() +
-  geom_polygon(data = states, aes(group = group), fill = NA, color = "black", inherit.aes = TRUE, size = .3) +
+  geom_polygon(data = reg.df, aes(x = long, y = lat, group = group), fill = NA, color = "black", inherit.aes = FALSE, size = .3) +
   theme_bw() +
   coord_fixed(1.3) +
   # scale_fill_manual(values = voltcols) +
   scale_fill_viridis(na.value = "white", begin = 0, end = 1, discrete = FALSE) +
   ggtitle(paste0("Diapause and generation at DOY ", doy), subtitle = newname) +
   guides(color = FALSE) +
-  facet_wrap( ~ var, ncol = 1)
+  facet_wrap( ~ var, ncol = 1) +
+  scale_y_continuous(expand = c(0, 0) ) +
+  scale_x_continuous(expand = c(0, 0) )
 tmpplt
 
 ggsave(paste0(newname, df$var[1], ".png"),

@@ -2,7 +2,7 @@
 # to source for model_lifecycle.R
 species_params <- function(species, biotype, nsim, model_CDL){
   
-  # Galerucella calmariensis
+  # Galerucella calmariensis ----
   if (species == "GCA"){
     # life cycle parameters
     # life stage order starting with overwintering stages
@@ -49,7 +49,7 @@ species_params <- function(species, biotype, nsim, model_CDL){
     # TODO: empirical distribution from data
   } # end GCA 
   
-  # Diorhabda carinulata
+  # Diorhabda carinulata ----
   if (species == "DCA"){
     # life cycle parameters
     # life stage order starting with overwintering stages
@@ -100,7 +100,7 @@ species_params <- function(species, biotype, nsim, model_CDL){
     # TODO: empirical distribution from data
   } # end DCA
   
-  # Aphalara itadori
+  # Aphalara itadori ----
   if (species == "APHA"){
     # life cycle parameters
     # life stage order starting with overwintering stages
@@ -108,9 +108,9 @@ species_params <- function(species, biotype, nsim, model_CDL){
     # Degree day thresholds
     # need to match length and order of stgorder
     # Could add biotype differences here if needed
-    stage_ldt <- rep(6.1, 4)
-    stage_udt <- rep(35, 4)
-    stage_dd  <- c(306, 154, 454, 76)
+    stage_ldt <- rep(6.9, 4)
+    stage_udt <- rep(32, 4)
+    stage_dd  <- c(306, 136, 409, 75)
     
     # diapause response to photoperiod
     photo_sens <- 4 # integer sensitive stages, can have more than one
@@ -129,14 +129,14 @@ species_params <- function(species, biotype, nsim, model_CDL){
     if (model_CDL == 2){
       coefs <- c(NA, switch(biotype,
                             "N" = c(90.0916, -6.1151),
-                            "S" = c(86.3354, -6.1151)))
+                            "S" = c(47.0957, -3.3456)))
     }
     
     # Take distribution and calculate substages for oviposition distribution
     # Very little known about emergence
     # TRY 1 with normal distrib
-    arg1 = list(mu = 250, sigma2 = 2000)
-    xdist = seq(100, 400, length.out = 1000)
+    arg1 = list(mu = 220, sigma2 = 2500)
+    xdist = seq(90, 350, length.out = 1000)
     ydist = dnorm(xdist, mean = arg1$mu, sd = sqrt(arg1$sigma2))
     
     # plot(xdist, ydist)

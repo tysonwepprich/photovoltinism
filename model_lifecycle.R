@@ -25,7 +25,7 @@ source('species_params.R')
 # PRISM: need to download CONUS which takes a lot of space
 # Daymet: can download what you need with bounding box
 weather_path <- "daymet"
-download_daily_weather <- 1 # 1 if you need to download PRISM/Daymet data first (20 minutes)
+download_daily_weather <- 0 # 1 if you need to download PRISM/Daymet data first (20 minutes)
 weather_data_source <- "daymet" # or 'prism'
 
 
@@ -39,9 +39,9 @@ runparallel <- 1 # 1 for yes, 0 for no
 yr           <- 2017
 start_doy    <- 1
 end_doy      <- 365
-region_param <- "NORTHWEST" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
-species      <- "GCA" # GCA/APHA/DCA
-biotype      <- "N" # TODO: add options for each species, N or S for APHA and GCA
+region_param <- "ALL" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
+species      <- "APHA" # GCA/APHA/DCA
+biotype      <- "S" # TODO: add options for each species, N or S for APHA and GCA
 
 # introducing individual variation, tracked with simulation for each substage
 # assign to 1 to match previous model versions
@@ -57,17 +57,17 @@ model_CDL  <- 2
 # downloads entire CONUS, so files are large
 if (download_daily_weather == 1){
   if (weather_data_source == "prism"){
-  startdate <- as.Date(start_doy - 1, origin = paste0(yr, "-01-01"))
-  enddate <- as.Date(end_doy - 1, origin = paste0(yr, "-01-01"))
-  
-  # need to set download directory
-  # options(prism.path = paste("prismDL", yr, sep = "/"))
-  options(prism.path = weather_path)
-  
-  get_prism_dailys("tmin", minDate = startdate, 
-                   maxDate = enddate, keepZip = FALSE)
-  get_prism_dailys("tmax", minDate = startdate, 
-                   maxDate = enddate, keepZip = FALSE)
+    startdate <- as.Date(start_doy - 1, origin = paste0(yr, "-01-01"))
+    enddate <- as.Date(end_doy - 1, origin = paste0(yr, "-01-01"))
+    
+    # need to set download directory
+    # options(prism.path = paste("prismDL", yr, sep = "/"))
+    options(prism.path = weather_path)
+    
+    get_prism_dailys("tmin", minDate = startdate, 
+                     maxDate = enddate, keepZip = FALSE)
+    get_prism_dailys("tmax", minDate = startdate, 
+                     maxDate = enddate, keepZip = FALSE)
   }
   if (weather_data_source == "daymet"){
     
@@ -92,28 +92,49 @@ if (download_daily_weather == 1){
 REGION <- assign_extent(region_param = region_param)
 params <- species_params(species, biotype, nsim, model_CDL)
 
-# If GDD not pre-calculated, load list of PRISM files
-# Add option for GDD pre-calculated (if all stages have same traits)
-# send file names to for loop
-pattern = paste("(PRISM_tmin_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
-tminfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
-tminfiles <- ExtractBestPRISM(tminfiles, yr, leap = "keep")[start_doy:end_doy]
-
-pattern = paste("(PRISM_tmax_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
-tmaxfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
-tmaxfiles <- ExtractBestPRISM(tmaxfiles, yr, leap = "keep")[start_doy:end_doy]
-
+if (weather_data_source == "prism"){
+  
+  # If GDD not pre-calculated, load list of PRISM files
+  # Add option for GDD pre-calculated (if all stages have same traits)
+  # send file names to for loop
+  pattern = paste("(PRISM_tmin_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
+  tminfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
+  tminfiles <- ExtractBestPRISM(tminfiles, yr, leap = "keep")[start_doy:end_doy]
+  
+  pattern = paste("(PRISM_tmax_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
+  tmaxfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
+  tmaxfiles <- ExtractBestPRISM(tmaxfiles, yr, leap = "keep")[start_doy:end_doy]
+}
+if (weather_data_source == "daymet"){
+  tmaxfile <- brick(paste0(weather_path, "/tmax_", yr, ".grd"))
+  tminfile <- brick(paste0(weather_path, "/tmin_", yr, ".grd"))
+  
+}
 # make template for all subsequent rasters to ensure same extent
 # TODO: test that tmin and tmax have same result
 
-template <- crop(raster(tminfiles[1]), REGION)
-# template <- crop(aggregate(raster(files[1]), fact = 2), REGION)
-template[!is.na(template)] <- 0
-
+if(weather_data_source == "prism"){
+  template <- crop(raster(tminfiles[1]), REGION)
+  # template <- crop(aggregate(raster(files[1]), fact = 2), REGION)
+  template[!is.na(template)] <- 0
+}
+if(weather_data_source == "daymet"){
+  # this takes a long time, put into parallel?
+  # tmaxfile <- crop(aggregate(tmaxfile, fact = 2), REGION)
+  # tminfile <- crop(aggregate(tminfile, fact = 2), REGION)
+  
+  tmaxfile <- crop(tmaxfile, REGION)
+  tminfile <- crop(tminfile, REGION)
+  template <- tmaxfile[[1]]
+  template[!is.na(template)] <- 0
+  
+  # aggregate template here, then crop in splitmap
+  template <- aggregate(template, fact = 2, fun = mean, na.rm = TRUE, expand = TRUE)
+}
 # splits template into list of 4 smaller map rasters to run in parallel
 # only doing this for CONUS, because benefit lost for smaller map sizes
 # TODO: alternative for speed would be increasing cell size by aggregation
-if (region_param == "CONUS"){
+if (region_param %in% c("ALL", "CONUS")){
   SplitMap <- SplitRas(template, ppside = 2, TRUE, FALSE)
 }else{
   SplitMap <- list(template)
@@ -131,7 +152,7 @@ dir.create(newname)
 if ( runparallel == 1){
   # run simulations in parallel
   # make this option in parameter file?
-  if (region_param == "CONUS"){
+  if (region_param %in% c("ALL", "CONUS")){
     ncores <- nsim * 2 # trying out half the cores needed, see if writeRaster better
   }else{
     ncores <- nsim
@@ -151,171 +172,180 @@ if ( runparallel == 1){
 # if errors with some sims/maps, rerun foreach loop below again for them
 # use folders left in raster tmp directory to know which didn't work
 
-# system.time({
-outfiles <- foreach(sim = 1:nsim,
-                    # outfiles <- foreach(sim = 5, # if some runs don't work, rerun individually
-                    .packages= "raster",
-                    .inorder = FALSE) %:% 
-  foreach(maps = 1:length(SplitMap),
-          # foreach(maps = 3, # if some runs don't work, rerun individually
-          .packages = "raster",
-          .inorder = FALSE) %dopar%{
-            # .inorder = FALSE) %do%{
-            
-            # profvis::profvis({
-            # creates unique filepath for directory to store results
-            tmppath <- paste0(myrastertmp, "run", maps, sim)
-            dir.create(path = tmppath, showWarnings = FALSE)
-            # sets temp directory for raster files
-            rasterOptions(tmpdir=file.path(tmppath)) 
-            
-            # Varying traits from parameter file
-            stgorder   <- params$stgorder
-            relpopsize <- params$relpopsize[sim]
-            stage_dd   <- params$stage_dd[sim, ]
-            stage_ldt  <- params$stage_ldt
-            stage_udt  <- params$stage_udt
-            photo_sens <- params$photo_sens
-            CDL        <- params$CDL[1]
-            cdl_b0     <- params$CDL[2]
-            cdl_b1     <- params$CDL[3]
-            
-            # Initiate rasters that all match template so they have same extent
-            template <- SplitMap[[maps]]
-            # Track degree-day accumulation per cell per day
-            dd_accum <- template
-            # Overwintering as stage 1, all cells start here
-            # Track lifestage for each cell per day
-            lifestage <- template + 1 
-            # Track voltinism and diapause per cell per day, starting at 0
-            numgen <- template
-            diap <- template
-            
-            # Loop over days ----
-            for (index in seq_along(tminfiles)) {
+system.time({
+  outfiles <- foreach(sim = 1:nsim,
+                      # outfiles <- foreach(sim = 5, # if some runs don't work, rerun individually
+                      .packages= "raster",
+                      .inorder = FALSE) %:% 
+    foreach(maps = 1:length(SplitMap),
+            # foreach(maps = 3, # if some runs don't work, rerun individually
+            .packages = "raster",
+            .inorder = FALSE) %dopar%{
+              # .inorder = FALSE) %do%{
               
-              # get daily temperature, crop to REGION
-              tmin <- crop(raster(tminfiles[index]), template)
-              tmax <- crop(raster(tmaxfiles[index]), template)
+              # profvis::profvis({
+              # creates unique filepath for directory to store results
+              tmppath <- paste0(myrastertmp, "run", maps, sim)
+              dir.create(path = tmppath, showWarnings = FALSE)
+              # sets temp directory for raster files
+              rasterOptions(tmpdir=file.path(tmppath)) 
               
-              # photoperiod for this day across raster
-              # TODO: could be done outside of loop for speed up
-              if (model_CDL != 0){
-                doy <- start_doy + index - 1
-                photo <- RasterPhoto(template, doy, perc_twilight = 25)
-              }
-
-              # Assign lifestage raster -----
-              # Each raster cell is assigned to a lifestage
-              # These three rasters assign physiological parameters by cell
-              ls_ldt <- setValues(lifestage, stage_ldt[getValues(lifestage)])
-              ls_udt <- setValues(lifestage, stage_udt[getValues(lifestage)])
-              ls_dd  <- setValues(lifestage, stage_dd[getValues(lifestage)])
+              # Varying traits from parameter file
+              stgorder   <- params$stgorder
+              relpopsize <- params$relpopsize[sim]
+              stage_dd   <- params$stage_dd[sim, ]
+              stage_ldt  <- params$stage_ldt
+              stage_udt  <- params$stage_udt
+              photo_sens <- params$photo_sens
+              CDL        <- params$CDL[1]
+              cdl_b0     <- params$CDL[2]
+              cdl_b1     <- params$CDL[3]
               
-              # Calculate stage-specific degree-days for each cell per day
-              dd_tmp <- overlay(tmax, tmin, ls_ldt, ls_udt, fun = TriDD)
-              rm(ls_ldt, ls_udt, tmax, tmin)
-              # gc()
+              # Initiate rasters that all match template so they have same extent
+              template <- SplitMap[[maps]]
               
-              # TODO: wrap inside function for memory efficiency
-              # Accumulate degree days ----
-              dd_accum <- dd_accum + dd_tmp
-              # Calculate lifestage progression: Is accumulation > lifestage requirement
-              progress <- dd_accum >= ls_dd
-              lifestage <- lifestage + progress
-              # Reset the DDaccum cells to zero for cells that progressed to next lifestage
-              dd_accum <- dd_accum - (progress * ls_dd)
-              # If adult stage progressed, that cell has oviposition
-              ovip <- lifestage == (which(stgorder == "A") + 1)
-              numgen <- numgen + ovip
-              # Reassign cells with oviposition to egg stage
-              lifestage <- Cond(ovip == 1, which(stgorder == "E"), lifestage)
-              rm(dd_tmp, ovip, progress, ls_dd)
-              # gc()
+              # Track degree-day accumulation per cell per day
+              dd_accum <- template
+              # Overwintering as stage 1, all cells start here
+              # Track lifestage for each cell per day
+              lifestage <- template + 1 
+              # Track voltinism and diapause per cell per day, starting at 0
+              numgen <- template
+              diap <- template
               
-              # Diapause ----
-              # keep running lifecycle as if all directly developing
-              # but add new raster to track percent of population actually
-              # in diapause following photoperiod response
-              if (model_CDL == 1){
-                sens_mask <- Cond(lifestage %in% photo_sens, 1, 0)
-                prop_diap <- photo < CDL
-                tmpdiap <- Cond(sens_mask == 1, prop_diap, diap)
-                diap <- Cond(prop_diap < diap, diap, tmpdiap)
-              }
-              
-              if (model_CDL == 2){
+              # Loop over days ----
+              # for (index in seq_along(tminfiles)) {
+              for (index in start_doy:end_doy) {
+                
+                # # get daily temperature, crop to REGION
+                # tmin <- crop(raster(tminfiles[index]), template)
+                # tmax <- crop(raster(tmaxfiles[index]), template)
+                
+                # DAYMET, already bricked and cropped to REGION
+                # get daily temperature, crop to SplitMap
+                # tmin <- crop(tminfile[[index]], template)
+                # tmax <- crop(tmaxfile[[index]], template)
+                tmin <- crop(aggregate(tminfile[[index]], fact = 2, fun = mean, na.rm = TRUE, expand = TRUE), template)
+                tmax <- crop(aggregate(tmaxfile[[index]], fact = 2, fun = mean, na.rm = TRUE, expand = TRUE), template)
+                
+                # photoperiod for this day across raster
+                # TODO: could be done outside of loop for speed up
+                if (model_CDL != 0){
+                  doy <- start_doy + index - 1
+                  photo <- RasterPhoto(template, doy, perc_twilight = 25)
+                }
+                
+                # Assign lifestage raster -----
+                # Each raster cell is assigned to a lifestage
+                # These three rasters assign physiological parameters by cell
+                ls_ldt <- setValues(lifestage, stage_ldt[getValues(lifestage)])
+                ls_udt <- setValues(lifestage, stage_udt[getValues(lifestage)])
+                ls_dd  <- setValues(lifestage, stage_dd[getValues(lifestage)])
+                
+                # Calculate stage-specific degree-days for each cell per day
+                dd_tmp <- overlay(tmax, tmin, ls_ldt, ls_udt, fun = TriDD)
+                rm(ls_ldt, ls_udt, tmax, tmin)
+                # gc()
+                
                 # TODO: wrap inside function for memory efficiency
-                # add logistic regression variation in CDL response
-                sens_mask <- Cond(lifestage %in% photo_sens, 1, 0)
-                # prop_diap <- exp(cdl_b0 + cdl_b1 * photo) /
-                #   (1 + exp(cdl_b0 + cdl_b1 * photo))
-                prop_diap <- calc(x = photo, function(x){
-                  exp(cdl_b0 + cdl_b1 * x) /
-                    (1 + exp(cdl_b0 + cdl_b1 * x))
-                })
-                tmpdiap <- Cond(sens_mask == 1, prop_diap, diap)
-                # need to account for prop_diap declining up until solstice
-                # only let proportion diapausing increase over season
-                diap <- Cond(prop_diap < diap, diap, tmpdiap)
-              }
-              
-              # memory management
-              rm(sens_mask, prop_diap, tmpdiap)
-              # gc()
-              
-              # TODO:
-              # Add section to combine simulations into weighted values before stacking
-              # Get one raster per day per 3 outputs first, fewer files to deal with later
-
-              # stack each days raster
-              if (!exists("LS_stack")){
-                LS_stack <- stack(lifestage)
-              } else {
-                LS_stack <- addLayer(LS_stack, lifestage)
-              }
-              
-              if (model_CDL != 0){
-                diap1 <- round(diap * 1000)
-                if (!exists("diap_stack")){
-                  diap_stack <- stack(diap1)
+                # Accumulate degree days ----
+                dd_accum <- dd_accum + dd_tmp
+                # Calculate lifestage progression: Is accumulation > lifestage requirement
+                progress <- dd_accum >= ls_dd
+                lifestage <- lifestage + progress
+                # Reset the DDaccum cells to zero for cells that progressed to next lifestage
+                dd_accum <- dd_accum - (progress * ls_dd)
+                # If adult stage progressed, that cell has oviposition
+                ovip <- lifestage == (which(stgorder == "A") + 1)
+                numgen <- numgen + ovip
+                # Reassign cells with oviposition to egg stage
+                lifestage <- Cond(ovip == 1, which(stgorder == "E"), lifestage)
+                rm(dd_tmp, ovip, progress, ls_dd)
+                # gc()
+                
+                # Diapause ----
+                # keep running lifecycle as if all directly developing
+                # but add new raster to track percent of population actually
+                # in diapause following photoperiod response
+                if (model_CDL == 1){
+                  sens_mask <- Cond(lifestage %in% photo_sens, 1, 0)
+                  prop_diap <- photo < CDL
+                  tmpdiap <- Cond(sens_mask == 1, prop_diap, diap)
+                  diap <- Cond(prop_diap < diap, diap, tmpdiap)
+                }
+                
+                if (model_CDL == 2){
+                  # TODO: wrap inside function for memory efficiency
+                  # add logistic regression variation in CDL response
+                  sens_mask <- Cond(lifestage %in% photo_sens, 1, 0)
+                  # prop_diap <- exp(cdl_b0 + cdl_b1 * photo) /
+                  #   (1 + exp(cdl_b0 + cdl_b1 * photo))
+                  prop_diap <- calc(x = photo, function(x){
+                    exp(cdl_b0 + cdl_b1 * x) /
+                      (1 + exp(cdl_b0 + cdl_b1 * x))
+                  })
+                  tmpdiap <- Cond(sens_mask == 1, prop_diap, diap)
+                  # need to account for prop_diap declining up until solstice
+                  # only let proportion diapausing increase over season
+                  diap <- Cond(prop_diap < diap, diap, tmpdiap)
+                }
+                
+                # memory management
+                rm(sens_mask, prop_diap, tmpdiap)
+                # gc()
+                
+                # TODO:
+                # Add section to combine simulations into weighted values before stacking
+                # Get one raster per day per 3 outputs first, fewer files to deal with later
+                
+                # stack each days raster
+                if (!exists("LS_stack")){
+                  LS_stack <- stack(lifestage)
                 } else {
-                  diap_stack <- addLayer(diap_stack, diap1)
-                }    
-              }
+                  LS_stack <- addLayer(LS_stack, lifestage)
+                }
+                
+                if (model_CDL != 0){
+                  diap1 <- round(diap * 1000)
+                  if (!exists("diap_stack")){
+                    diap_stack <- stack(diap1)
+                  } else {
+                    diap_stack <- addLayer(diap_stack, diap1)
+                  }    
+                }
+                
+                if (!exists("numgen_stack")){
+                  numgen_stack <- stack(numgen)
+                } else {
+                  numgen_stack <- addLayer(numgen_stack, numgen)
+                }
+                
+                rm(diap1)
+              }  # daily loop
               
-              if (!exists("numgen_stack")){
-                numgen_stack <- stack(numgen)
-              } else {
-                numgen_stack <- addLayer(numgen_stack, numgen)
-              }
+              # Write results ----
+              # if parallel by map chunk
+              # each band is a day, first index is map chunk index
+              mapcode <- formatC(maps, width = 3, format = "d", flag = "0")
               
-              rm(diap1)
-            }  # daily loop
-            
-            # Write results ----
-            # if parallel by map chunk
-            # each band is a day, first index is map chunk index
-            mapcode <- formatC(maps, width = 3, format = "d", flag = "0")
-            
-            writeRaster(numgen_stack,
-                        filename = paste(newname, "/NumGen_", mapcode, "_sim", sim, sep = ""),
-                        overwrite = TRUE, datatype = "INT1U")
-            writeRaster(LS_stack, filename = paste(newname, "/LS_", mapcode, "_sim", sim, sep = ""),
-                        overwrite = TRUE, datatype = "INT1U")
-            if (model_CDL != 0){
-              writeRaster(diap_stack, filename = paste(newname, "/diap_", mapcode, "_sim", sim, sep = ""),
-                          overwrite = TRUE, datatype = "INT2U")
-            }
-            # memory management
-            rm(numgen_stack, LS_stack, diap_stack)
-            # delete entire raster temp directory without affecting other running processes
-            unlink(tmppath, recursive = TRUE)
-            gc()
-            
-            # }) # profvis
-          } # close foreach loop
-# }) #system.time
+              writeRaster(numgen_stack,
+                          filename = paste(newname, "/NumGen_", mapcode, "_sim", sim, sep = ""),
+                          overwrite = TRUE, datatype = "INT1U")
+              writeRaster(LS_stack, filename = paste(newname, "/LS_", mapcode, "_sim", sim, sep = ""),
+                          overwrite = TRUE, datatype = "INT1U")
+              if (model_CDL != 0){
+                writeRaster(diap_stack, filename = paste(newname, "/diap_", mapcode, "_sim", sim, sep = ""),
+                            overwrite = TRUE, datatype = "INT2U")
+              }
+              # memory management
+              rm(numgen_stack, LS_stack, diap_stack)
+              # delete entire raster temp directory without affecting other running processes
+              unlink(tmppath, recursive = TRUE)
+              gc()
+              
+              # }) # profvis
+            } # close foreach loop
+}) #system.time
 
 if(exists("cl")){
   stopCluster(cl)
@@ -335,12 +365,13 @@ if(exists("cl")){
 
 # use template to make sure NA values in right places
 # will need to adjust results to fit datatype with integers
-template <- crop(raster(tminfiles[1]), REGION)
-template[!is.na(template)] <- 0
+
+# template <- crop(raster(tminfiles[1]), REGION)
+# template[!is.na(template)] <- 0
 dataType(template) <- "INT2U"
 
 # Input directories with results
-newdirs <- c("DCA_2017_LL", "DCA_2017_TM")
+newdirs <- "APHA_2017_ALL" # c("DCA_2017_LL", "DCA_2017_TM")
 for (newname in newdirs){
   # Weighted results by substage sizes
   # Not needed for older model with only one parameter per stage
@@ -377,88 +408,91 @@ for (newname in newdirs){
   
   # run inside foreach now
   # this loop takes a lot of time
+  # one problem is that numgen can be >10, but all run on one core (per map)
+  # ALSO, some numgen weighted maps do not include all SplitMaps if lower voltinism
+  
   foreach(i = ls,
-          .packages= "raster") %dopar%{
-            # foreach(m = maps,
-            #         .packages = "raster") %dopar%{
-            m <- maps[1]
-            
-            tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", i, "run", m)
-            dir.create(path = tmppath, showWarnings = FALSE)
-            #sets temp directory
-            rasterOptions(tmpdir=file.path(tmppath)) 
-            fs <- sort(rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)])
-            fs <- sort(fs[grep(pattern = m, x = fs, fixed = TRUE)])
-            tmp <- brick(fs[1])[[1]]
-            tmp <- tmp + template # NA values added
-            tmp[!is.na(tmp)] <- 0
-            
-            if (i == "diap"){
-              ll <- replicate(nlayers(brick(fs[1])), tmp)
-              blank <- brick(ll)
-              for (j in 1:length(fs)){
-                # Diapause, total / 1000
-                ras_weighted <- round(brick(fs[j]) * params$relpopsize[j])
-                blank <- overlay(blank, ras_weighted, fun=function(x,y) x + y)
-              }
-              outras <- writeRaster(blank, filename = paste(i, m, "weighted", sep = "_"),
-                                    overwrite = TRUE, datatype = "INT2U")
-            }
-            
-            # Lifestage
-            if (i == "LS"){
-              for (stg in seq_along(params$stgorder)){
+          .packages= "raster") %:%
+    foreach(m = maps,
+            .packages = "raster") %dopar%{
+              # m <- maps[1]
+              
+              tmppath <- paste0("~/REPO/photovoltinism/rastertmp/", i, "run", m)
+              dir.create(path = tmppath, showWarnings = FALSE)
+              #sets temp directory
+              rasterOptions(tmpdir=file.path(tmppath)) 
+              fs <- sort(rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)])
+              fs <- sort(fs[grep(pattern = m, x = fs, fixed = TRUE)])
+              tmp <- brick(fs[1])[[1]]
+              tmp <- tmp + template # NA values added
+              tmp[!is.na(tmp)] <- 0
+              
+              if (i == "diap"){
                 ll <- replicate(nlayers(brick(fs[1])), tmp)
                 blank <- brick(ll)
                 for (j in 1:length(fs)){
-                  ras_weighted <- round(1000 * (brick(fs[j]) == stg) * params$relpopsize[j])
+                  # Diapause, total / 1000
+                  ras_weighted <- round(brick(fs[j]) * params$relpopsize[j])
                   blank <- overlay(blank, ras_weighted, fun=function(x,y) x + y)
                 }
-                outras <- writeRaster(blank, filename = paste(params$stgorder[stg], m, "weighted", sep = "_"),
+                outras <- writeRaster(blank, filename = paste(i, m, "weighted", sep = "_"),
                                       overwrite = TRUE, datatype = "INT2U")
               }
-            }
-            
-            
-            if (i == "NumGen"){
-              maxvolt <- max(unlist(lapply(fs,  function(x){
-                max(getValues(brick(x)), na.rm = TRUE)
-              })))
-              for (stg in seq_len(maxvolt)){
-                ll <- replicate(nlayers(brick(fs[1])), tmp)
-                blank <- brick(ll)
-                for (j in 1:length(fs)){
-                  ras_weighted <- round(1000 * (brick(fs[j]) == stg) * params$relpopsize[j])
-                  blank <- overlay(blank, ras_weighted, fun=function(x,y) x + y)
+              
+              # Lifestage
+              if (i == "LS"){
+                for (stg in seq_along(params$stgorder)){
+                  ll <- replicate(nlayers(brick(fs[1])), tmp)
+                  blank <- brick(ll)
+                  for (j in 1:length(fs)){
+                    ras_weighted <- round(1000 * (brick(fs[j]) == stg) * params$relpopsize[j])
+                    blank <- overlay(blank, ras_weighted, fun=function(x,y) x + y)
+                  }
+                  outras <- writeRaster(blank, filename = paste(params$stgorder[stg], m, "weighted", sep = "_"),
+                                        overwrite = TRUE, datatype = "INT2U")
                 }
-                voltname <- paste0("NumGen", stg)
-                outras <- writeRaster(blank, filename = paste(voltname, m, "weighted", sep = "_"),
-                                      overwrite = TRUE, datatype = "INT2U")
               }
-            }
-            
-            
-            # might be faster, test later
-            # test <- BigOverlayWeightedMean(fs, params$relpopsize)
-            #   test <- test + template
-            #   BigOverlayWeightedMean <- function(fs, simsize) {
-            #     require(abind)
-            #     require(raster)
-            #     L <- as.list(fs)
-            #     B <- lapply(seq_along(L), 
-            #                  FUN = function(x, ras, pop){
-            #                   brick(ras[x]) * pop[x]}, ras = L, pop = simsize)
-            #     A <- do.call(abind, c(lapply(B, as.matrix), along=3))
-            #     A <- aperm(A, c(3, 1, 2))
-            #     z <- colSums(A)
-            #     # z <- apply(A, c(1:2), FUN = weighted.mean, w = simsize)
-            #     b <- setValues(brick(fs[1]), z)
-            #   }
-            
-            removeTmpFiles(h = 0)
-            unlink(tmppath, recursive = TRUE)
-            
-          } # end foreach
+              
+              
+              if (i == "NumGen"){
+                maxvolt <- max(unlist(lapply(fs,  function(x){
+                  max(getValues(brick(x)), na.rm = TRUE)
+                })))
+                for (stg in seq_len(maxvolt)){
+                  ll <- replicate(nlayers(brick(fs[1])), tmp)
+                  blank <- brick(ll)
+                  for (j in 1:length(fs)){
+                    ras_weighted <- round(1000 * (brick(fs[j]) == stg) * params$relpopsize[j])
+                    blank <- overlay(blank, ras_weighted, fun=function(x,y) x + y)
+                  }
+                  voltname <- paste0("NumGen", stg)
+                  outras <- writeRaster(blank, filename = paste(voltname, m, "weighted", sep = "_"),
+                                        overwrite = TRUE, datatype = "INT2U")
+                }
+              }
+              
+              
+              # might be faster, test later
+              # test <- BigOverlayWeightedMean(fs, params$relpopsize)
+              #   test <- test + template
+              #   BigOverlayWeightedMean <- function(fs, simsize) {
+              #     require(abind)
+              #     require(raster)
+              #     L <- as.list(fs)
+              #     B <- lapply(seq_along(L), 
+              #                  FUN = function(x, ras, pop){
+              #                   brick(ras[x]) * pop[x]}, ras = L, pop = simsize)
+              #     A <- do.call(abind, c(lapply(B, as.matrix), along=3))
+              #     A <- aperm(A, c(3, 1, 2))
+              #     z <- colSums(A)
+              #     # z <- apply(A, c(1:2), FUN = weighted.mean, w = simsize)
+              #     b <- setValues(brick(fs[1]), z)
+              #   }
+              
+              removeTmpFiles(h = 0)
+              unlink(tmppath, recursive = TRUE)
+              
+            } # end foreach
   
   setwd(returnwd)
 } # end newdirs
@@ -467,46 +501,106 @@ stopCluster(cl) #WINDOWS
 # setwd(returnwd)
 
 # # quick plot of a few days from weighted raster to check
-# test <- brick(paste(newname, "NumGen5_001_weighted.grd", sep = "/"))
+test <- brick(paste(newname, "diap_all.grd", sep = "/"))
 # test <- brick(paste(newname, "L_001_weighted.grd", sep = "/"))
-# test <- brick(paste(newname, "diap_001_weighted.grd", sep = "/"))
-# plot(test[[c(150, 200, 250, 300)]])
+# test <- brick(paste(newname, "diap_003_weighted.grd", sep = "/"))
+plot(test[[c(200, 250, 300, 350)]])
 
-# # mosaic maps together if CONUS
-# # maybe hold off on this since its files so large
-# # # LINUX
-# # ncores <- length(ls)
-# # registerDoMC(cores = ncores)
-# # WINDOWS
-# ncores <- 4
-# cl <- makeCluster(ncores)
-# registerDoSNOW(cl)
-# f <-list.files()
-# rasfiles <- f[grep(pattern = "weighted", x = f, fixed = TRUE)]
-# lstage <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1])
-# 
-# system.time({
-#   foreach(i = lstage,
-#           .packages = "raster") %dopar%{
-#             fs <- rasfiles[grep(pattern = i, x = rasfiles, fixed = TRUE)]
-#             
-#             bricklist <- list()
-#             for (m in 1:length(fs)){
-#               bricklist[[m]] <- brick(fs[m])
-#             }
-#             
-#             bricklist$filename <- paste(i, "all", sep = "_")
-#             bricklist$overwrite <- TRUE
-#             test <- do.call(merge, bricklist)
-#           }
-#   
-#   cleanup <- list.files()
-#   cleanup <- cleanup[-grep("all", x = cleanup)]
-#   lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
-# })
-# stopCluster(cl) #WINDOWS
-# setwd(returnwd)
+# Mosaic split maps ----
+# mosaic maps together if CONUS (technically merge/overlay?)
+# maybe hold off on this since its files so large
+# parallel backend for foreach loop
+if ( runparallel == 1){
+  # run simulations in parallel
+  ncores <- 4
+  cl <- makePSOCKcluster(ncores, output = "")
+  registerDoParallel(cl)
+}
 
+returnwd <- getwd()
+setwd(newname)
+f <-list.files()
+rasfiles <- f[grep(pattern = "weighted", x = f, fixed = TRUE)]
+ls_index <- stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1]
+lstage <- unique(ls_index)
+
+# dataType(template) <- "INT2U"
+# tempbrick <- brick(replicate(365, template))
+
+
+system.time({
+  foreach(i = lstage,
+          .packages = "raster") %dopar%{
+            
+            fs <- rasfiles[which(ls_index == i)]
+            fs <- fs[grep(pattern = ".grd", x = fs, fixed = TRUE)]
+            
+            bricklist <- list()
+            # bricklist[[1]] <- tempbrick
+            for (m in 1:length(fs)){
+              bricklist[[(m)]] <- brick(fs[m])
+            }
+            
+            bricklist$filename <- paste(i, "all", sep = "_")
+            bricklist$overwrite <- TRUE
+            test <- do.call(merge, bricklist)
+            # 
+            # bricklist$fun <- sum
+            # bricklist$na.rm <- TRUE
+            # test <- do.call(mosaic, bricklist)
+            # 
+            # updating_raster <- bricklist[[2]]
+            # 
+            # for (br in 2:length(bricklist)) {
+            #   next_raster <- bricklist[[br]]
+            #   updating_raster <- mosaic(x = updating_raster, 
+            #                            y = next_raster, 
+            #                            fun = sum,
+            #                            na.rm = TRUE,
+            #                            filename = paste(i, "all", sep = "_"),
+            #                            overwrite = TRUE)
+            # }
+            # 
+            
+            # test <- test + template
+            # outras <- writeRaster(test, filename = paste(i, "all", sep = "_"),
+            #                       overwrite = TRUE, datatype = "INT2U")
+            
+          }
+  
+  # cleanup <- list.files()
+  # cleanup <- cleanup[-grep("all", x = cleanup)]
+  # lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
+})
+stopCluster(cl) #WINDOWS
+setwd(returnwd)
+
+
+# Need a voltinism map that averages the different generations
+
+newname <- "APHA_2017_ALL"
+
+
+returnwd <- getwd()
+setwd(newname)
+f <-list.files()
+rasfiles <- f[grep(pattern = "NumGen", x = f, fixed = TRUE)]
+rasfiles <- rasfiles[grep(pattern = "_all.grd", x = rasfiles, fixed = TRUE)]
+
+ls_index <- stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1]
+ls_index <- as.numeric(gsub(pattern = "NumGen", replacement = "", fixed = TRUE, x = ls_index))
+
+bricklist <- list()
+for (m in 1:length(rasfiles)){
+  bricklist[[m]] <- brick(rasfiles[m])[[365]] * ls_index[m] 
+}
+bricklist$fun <- mean
+bricklist$na.rm <- TRUE
+bricklist$filename <- paste(i, "all", sep = "_")
+bricklist$overwrite <- TRUE
+test <- do.call(mosaic, bricklist)
+
+# could also stack day365 layers and do weighted.mean
 
 # 5. Clean up ------
 # remove non-weighted results to save disk space
