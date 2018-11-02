@@ -44,15 +44,15 @@ model_CDL  <- 2
 REGION <- assign_extent(region_param = region_param)
 params <- species_params(species, biotype, nsim, model_CDL)
 
-states <- map_data("state", xlim = c(REGION@xmin, REGION@xmax),
-                   ylim = c(REGION@ymin, REGION@ymax), lforce = "e")
-names(states)[1:2] <- c("x", "y")
-
-us <- getData("GADM",country="USA",level=1)
-canada <- getData("GADM",country="CAN",level=1)
-
-states <- crop(us, REGION)
-provs <- crop(canada, REGION)
+# states <- map_data("state", xlim = c(REGION@xmin, REGION@xmax),
+#                    ylim = c(REGION@ymin, REGION@ymax), lforce = "e")
+# names(states)[1:2] <- c("x", "y")
+# 
+# us <- getData("GADM",country="USA",level=1)
+# canada <- getData("GADM",country="CAN",level=1)
+# 
+# states <- crop(us, REGION)
+# provs <- crop(canada, REGION)
 
 if (!file.exists("./src/ref/ne_50m_admin_1_states_provinces_lakes/ne_50m_admin_1_states_provinces_lakes.dbf")){
   download.file(file.path('http://www.naturalearthdata.com/http/',
@@ -265,7 +265,7 @@ levels(tsdat$Lifestage) <- c("Overwinter", "Egg", "Larva", "Pupa", "Adult", "Dia
 
 pltdat <- tsdat # %>% 
 #   filter(Lifestage %in% c("Egg", "Diapause"))
-                          
+
 # plt <- ggplot(pltdat, aes(x = DOY, y = Proportion, group = Lifestage, color = Lifestage)) +
 #   geom_line(size = 2) +
 #   facet_wrap(~ID, ncol = 1)
@@ -299,7 +299,7 @@ pltdat <- bind_rows(pltdat1, pltdat2) %>%
   filter(ID %in% unique(pltdat1$ID)[c(1, 3, 4, 6, 7, 20:22)]) %>% 
   mutate(Date = as.Date(DOY, origin=as.Date("2015-12-31")),
          photo_resp = paste("Photo", photo_resp, sep = "_")) #%>% 
-  # filter(photo_resp %in% c("Photo_North_sol", "Photo_South_sol"))
+# filter(photo_resp %in% c("Photo_North_sol", "Photo_South_sol"))
 # pltdat$photo_resp <- factor(pltdat$photo_resp, 
 #                             c("Photo_Lovelock", "Photo_Delta", "Photo_GoldButte",
 #                               "Photo_BigBend", "Photo_TopockMarsh"))
@@ -332,8 +332,8 @@ ggsave(paste(newname,"LifestageTSgdd", ".png", sep = ""),
 plt <- ggplot(gdd, aes(x = DOY, y = GDD, group = ID)) +
   geom_line(size = 2) +
   # facet_geo(~ID, grid = mygrid, scales = "free_y")
-# coord_cartesian(xlim = c(75, 300)) 
-facet_wrap(~ID, ncol = 1)
+  # coord_cartesian(xlim = c(75, 300)) 
+  facet_wrap(~ID, ncol = 1)
 plt
 
 # example plot of lifestages
@@ -352,7 +352,7 @@ exdat <- pltdat %>%
 plt <- ggplot(exdat, aes(x = Date, y = Proportion, group = Lifestage, color = Lifestage)) +
   geom_line(size = 2) +
   scale_x_date(date_breaks = "2 month", date_labels = "%b") +
-    facet_grid(photo_resp~ID)
+  facet_grid(photo_resp~ID)
 plt
 
 ggsave(paste(newname,"Portland", ".png", sep = ""),
@@ -399,19 +399,19 @@ for (d in days){
     pltdf <- resdf %>% 
       filter(lifestage == lifestages[p], 
              doy == d)
-      tmpplt <- ggplot(pltdf, aes(x, y, fill = Present)) +
-        geom_raster() +
-        geom_polygon(data = states, aes(group = group), fill = NA, color = "black", size = .1) +
-        theme_bw() +
-        ggtitle(ls_labels[p])
-      if(max(pltdf$Present, na.rm = TRUE) == 0){
-        tmpplt <- tmpplt +
-          scale_fill_viridis(na.value = "white", begin = 0, end = 0) 
-      }else{
-        tmpplt <- tmpplt +
-          scale_fill_viridis(na.value = "white", begin = 0, end = 1)  
-      }
-      pltlist[[length(pltlist)+1]] <- tmpplt
+    tmpplt <- ggplot(pltdf, aes(x, y, fill = Present)) +
+      geom_raster() +
+      geom_polygon(data = states, aes(group = group), fill = NA, color = "black", size = .1) +
+      theme_bw() +
+      ggtitle(ls_labels[p])
+    if(max(pltdf$Present, na.rm = TRUE) == 0){
+      tmpplt <- tmpplt +
+        scale_fill_viridis(na.value = "white", begin = 0, end = 0) 
+    }else{
+      tmpplt <- tmpplt +
+        scale_fill_viridis(na.value = "white", begin = 0, end = 1)  
+    }
+    pltlist[[length(pltlist)+1]] <- tmpplt
   }
 }
 
@@ -662,4 +662,152 @@ tmpplt
 
 ggsave(paste0(newname, df$var[1], ".png"),
        plot = tmpplt, device = "png", width = 10, height = 12, units = "in")
+
+
+# 9. More voltinism ----
+
+
+# Need a voltinism map that averages the different generations
+
+newname <- "APHA_2017_ALL"
+
+returnwd <- getwd()
+setwd(newname)
+f <-list.files()
+rasfiles <- f[grep(pattern = "NumGen", x = f, fixed = TRUE)]
+rasfiles <- rasfiles[grep(pattern = "_all.grd", x = rasfiles, fixed = TRUE)]
+
+ls_index <- stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1]
+ls_index <- as.numeric(gsub(pattern = "NumGen", replacement = "", fixed = TRUE, x = ls_index))
+
+# most voltinism will be zero at a particular place, few with more than one value need to be averaged
+
+# from template in model_lifecycle.R
+# aggregates the numgen raster for each generation into one voltinism map at end of year
+numgenstack <- mosaic(template, stack(rasfiles[1])[[365]], fun = max, na.rm = TRUE) * ls_index[1]
+for (m in 2:length(rasfiles)){
+  numgenstack <- addLayer(numgenstack, ls_index[m] * mosaic(template, stack(rasfiles[m])[[365]], fun = max, na.rm = TRUE))
+  # numgenstack[numgenstack == 0] <- NA
+  
+}
+
+numgen <- sum(numgenstack, na.rm = TRUE) / 1000 + template
+plot(numgen)
+writeRaster(numgen, filename = "numgen_365_gdd", datatype = "FLT4S")
+
+# make numgen rasterbrick that aggregates the single generation bricks
+# why did I remove this from model_lifecycle processing?
+
+
+
+newname <- "APHA_2017_ALL"
+
+returnwd <- getwd()
+setwd(newname)
+f <-list.files()
+rasfiles <- f[grep(pattern = "NumGen", x = f, fixed = TRUE)]
+rasfiles <- rasfiles[grep(pattern = "_all.grd", x = rasfiles, fixed = TRUE)]
+
+ls_index <- stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1]
+ls_index <- as.numeric(gsub(pattern = "NumGen", replacement = "", fixed = TRUE, x = ls_index))
+
+for (day in 1:365){
+  
+  numgenstack <- mosaic(template, stack(rasfiles[1])[[day]], fun = max, na.rm = TRUE) * ls_index[1]
+  for (m in 2:length(rasfiles)){
+    # numgenstack <- addLayer(numgenstack, mosaic(template, stack(rasfiles[m])[[day]], fun = max, na.rm = TRUE))
+    numgenstack <- addLayer(numgenstack, ls_index[m] * mosaic(template, stack(rasfiles[m])[[day]], fun = max, na.rm = TRUE))
+    
+    }
+  maxnumgen <- sum(numgenstack, na.rm = TRUE) / 1000 + template
+  
+  # maxnumgen <- which.max(numgenstack)
+  # maxnumgen  <- setValues(maxnumgen, ls_index[getValues(maxnumgen)]) # always number files with leading zeros!
+  
+  if (!exists("numgen_stack")){
+    numgen_stack <- stack(maxnumgen)
+  } else {
+    numgen_stack <- addLayer(numgen_stack, maxnumgen)
+  }
+}
+
+
+plot(numgen_stack[[350]])
+
+writeRaster(numgen_stack, filename = "NumGen", overwrite = TRUE)
+
+
+numgen_stack <- brick("NumGen.grd")
+numgen_stack <- numgen_stack[[1:365]]
+
+
+
+
+
+
+
+# what about frost limiting?
+# tmin from model_lifecycle.R
+tmin <- crop(aggregate(tminfile[[180:365]], fact = 2, fun = mean, na.rm = TRUE, expand = TRUE), template)
+
+test <- Cond(tmin <= -2, 1, 0)
+
+first <- calc(test, fun=cumsum)
+ffrost <- 179 + which.min(Cond(first == 0, 2, first)) # what I want is cumsum == 1 for first day
+ffrost <- Cond(ffrost == 180, 365, ffrost) # set no frost places to 365
+plot(ffrost)
+
+numgen_frost <- stackSelect(numgen_stack, ffrost)
+
+# numgen with diapause
+volt <- numgen_stack
+diap <- stack("diap_all.grd")
+threshold <- .75
+volt <- Cond(diap <= threshold * 1000, volt, 0)
+volt2 <- calc(volt, function(x){cummax(x)})
+
+# mismatch
+ng_gdd <- brick("numgen_365_gdd.grd")
+mmvolt <- volt2[[365]] - ng_gdd
+plot(mmvolt)
+
+# diverging color option
+library(scales) # for muted
+d + scale_colour_gradient2(low="red", high="blue")
+d + scale_colour_gradient2(low=muted("red"), high=muted("blue"))
+
+
+
+plttitle <- "Aphalara potential voltinism (no photoperiod) constrained by first hard frost (-2C)"
+pltname <- "APHA_numgen_frost.png"
+df <- as.data.frame(numgen_frost, xy=TRUE)
+names(df)[3] <- "Voltinism"
+
+
+# discrete voltinism classes for visual
+# df$Voltinism <- round(df$Voltinism/.5)*.5
+df$Voltinism <- round(df$Voltinism)
+maxvolt <- max(df$Voltinism, na.rm = TRUE)
+df$Voltinism <- factor(df$Voltinism, levels = c(1:maxvolt))
+levels(df$Voltinism) <- c(levels(df$Voltinism)[1:6], rep("7+", 5))
+
+df <- df %>% 
+  filter(!is.na(Voltinism))
+
+
+reg.df <- reg.df %>% 
+  filter(long >= min(df$x), long <= max(df$x),
+         lat >= min(df$y), lat <= max(df$y))
+theme_set(theme_void(base_size = 20)) 
+
+tmpplt <- ggplot(data = df, aes(x, y, fill = Voltinism)) +
+  geom_raster() +
+  geom_polygon(data = reg.df, aes(x = long, y = lat, group = group), fill = NA, color = "dark gray", inherit.aes = FALSE, size = .25) +
+  coord_fixed(1.3) +
+  scale_fill_viridis(name = "Generations", na.value = "white", begin = 0, end = maxvolt * .09, discrete = TRUE) +
+  ggtitle(plttitle) +
+  theme(legend.position = c(0.85, 0.4), plot.title = element_text(hjust = 0.5))
+tmpplt
+ggsave(pltname,
+       plot = tmpplt, device = "png", width = 18, height = 11, units = "in")
 

@@ -577,31 +577,6 @@ stopCluster(cl) #WINDOWS
 setwd(returnwd)
 
 
-# Need a voltinism map that averages the different generations
-
-newname <- "APHA_2017_ALL"
-
-
-returnwd <- getwd()
-setwd(newname)
-f <-list.files()
-rasfiles <- f[grep(pattern = "NumGen", x = f, fixed = TRUE)]
-rasfiles <- rasfiles[grep(pattern = "_all.grd", x = rasfiles, fixed = TRUE)]
-
-ls_index <- stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1]
-ls_index <- as.numeric(gsub(pattern = "NumGen", replacement = "", fixed = TRUE, x = ls_index))
-
-bricklist <- list()
-for (m in 1:length(rasfiles)){
-  bricklist[[m]] <- brick(rasfiles[m])[[365]] * ls_index[m] 
-}
-bricklist$fun <- mean
-bricklist$na.rm <- TRUE
-bricklist$filename <- paste(i, "all", sep = "_")
-bricklist$overwrite <- TRUE
-test <- do.call(mosaic, bricklist)
-
-# could also stack day365 layers and do weighted.mean
 
 # 5. Clean up ------
 # remove non-weighted results to save disk space
