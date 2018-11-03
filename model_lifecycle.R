@@ -38,9 +38,9 @@ runparallel <- 1 # 1 for yes, 0 for no
 yr           <- 2017
 start_doy    <- 1
 end_doy      <- 365
-region_param <- "ALL" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
-species      <- "APHA" # GCA/APHA/DCA
-biotype      <- "S" # TODO: add options for each species, N or S for APHA and GCA
+region_param <- "SW_MEX" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
+species      <- "DCA" # GCA/APHA/DCA
+biotype      <- "Original" # TODO: add options for each species, N or S for APHA and GCA
 
 
 # introducing individual variation, tracked with simulation for each substage
@@ -361,6 +361,8 @@ if(exists("cl")){
 # Split combined lifestage raster into one/lifestage
 # Mosaic CONUS if needed
 # Remove unused files
+# TODO: Core with numgen is slow because it makes a brick for each generation
+# TODO: Brick of voltinism (all generations) is useful, could do that here instead of modelPlots.R
 
 # library(abind)
 
@@ -372,7 +374,7 @@ if(exists("cl")){
 dataType(template) <- "INT2U"
 
 # Input directories with results
-newdirs <- "APHA_2017_ALL" # c("DCA_2017_LL", "DCA_2017_TM")
+newdirs <- "DCA_2017_ORIG" # c("DCA_2017_LL", "DCA_2017_TM")
 for (newname in newdirs){
   # Weighted results by substage sizes
   # Not needed for older model with only one parameter per stage
