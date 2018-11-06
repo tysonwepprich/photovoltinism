@@ -6,7 +6,7 @@ inst = lapply(pkgs, library, character.only = TRUE) # load them
 theme_set(theme_bw(base_size = 18)) 
 
 
-dat <- read.csv("C:/Users/wepprict/Desktop/galerucella_chamber_emergence_2018.csv", header = TRUE)
+dat <- read.csv("data/galerucella_chamber_emergence_2018.csv", header = TRUE)
 
 # reformat data from wide to long
 df <- dat %>% 
@@ -51,6 +51,20 @@ plt <- ggplot(df, aes(x = degdays, y = prop_emerged, group = interaction(populat
   xlab("Cumulative degree-days base 10C") +
   ylab("Proportion of total emerged by chamber x population") +
   theme(legend.position = c(0.9, 0.175))
+plt
+
+
+df2 <- df %>% 
+  filter(population %in% unique(df$population)[c(1, 2, 4, 7, 10)], chamber >= 4)
+plt <- ggplot(df2, aes(x = degdays, y = prop_emerged, group = interaction(population, chamber), color = as.factor(chamber))) + 
+  geom_point() +
+  scale_color_viridis(name = "Chamber", discrete = TRUE, begin = .25, end = .75) +
+  geom_smooth(span = .15, se = FALSE) +
+  facet_wrap(~population) + 
+  ggtitle("Adult emergence in degree-days by growth chamber") +
+  xlab("Cumulative degree-days base 10C") +
+  ylab("Proportion of total emerged by chamber") +
+  theme(legend.position = c(0.85, 0.2), plot.title = element_text(hjust = 0.5))
 plt
 
 # 
