@@ -35,7 +35,7 @@ runparallel <- 1 # 1 for yes, 0 for no
 
 # Pest Specific, Multiple Life Stage Phenology Model Parameters:
 # model scope
-yr           <- 2009
+yr           <- 2017
 start_doy    <- 1
 end_doy      <- 365
 region_param <- "ALL" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
@@ -131,26 +131,10 @@ if(weather_data_source == "daymet"){
   
   # aggregate template here, then crop in splitmap
   template <- aggregate(template, fact = 2, fun = mean, na.rm = TRUE, expand = TRUE)
-  
-  # gdd raster if needed
-  # start from end of season
-  # kludge to add pre-diapause gdd requirement for aphalara post-model run
-  for (index in 365:165){
-    tmin <- crop(aggregate(tminfile[[index]], fact = 2, fun = mean, na.rm = TRUE, expand = TRUE), template)
-    tmax <- crop(aggregate(tmaxfile[[index]], fact = 2, fun = mean, na.rm = TRUE, expand = TRUE), template)
-    dd_tmp <- overlay(tmax, tmin, template + 6.9, template + 32, fun = TriDD)
-    
-    if (!exists("dd_stack")){
-      dd_stack <- stack(dd_tmp)
-    } else {
-      dd_stack <- addLayer(dd_stack, dd_tmp)
-    }
+
   }
-  
-  last <- calc(dd_stack, fun=cumsum)
-  lastday <- 365 - which.max(Cond(last > 75, 1, last))
-  
-}
+
+
 # splits template into list of 4 smaller map rasters to run in parallel
 # only doing this for CONUS, because benefit lost for smaller map sizes
 # TODO: alternative for speed would be increasing cell size by aggregation
@@ -529,7 +513,7 @@ test <- brick(paste(newname, "diap_002_weighted.grd", sep = "/"))
 plot(test[[c(200, 250, 300, 350)]])
 
 # Mosaic split maps ----
-# mosaic maps together if CONUS (technically merge/overlay?)
+# mosaic maps together if CONUS or ALL (technically merge/overlay?)
 # maybe hold off on this since its files so large
 # parallel backend for foreach loop
 if ( runparallel == 1){

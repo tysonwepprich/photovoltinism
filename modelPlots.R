@@ -21,11 +21,11 @@ source('species_params.R')
 # 2. User input -----
 
 # input results directory
-newname <- "APHA_2009_ALL"
+newname <- "APHA_2017_ALL"
 
 # Pest Specific, Multiple Life Stage Phenology Model Parameters:
 # model scope
-yr           <- 2009
+yr           <- 2017
 start_doy    <- 1
 end_doy      <- 365
 region_param <- "ALL"
@@ -795,7 +795,7 @@ d + scale_colour_gradient2(low=muted("red"), high=muted("blue"))
 
 
 plttitle <- "Aphalara voltinism mismatch with photoperiod cue"
-pltname <- "APHA_mismatch_2009_discrete.png"
+pltname <- "APHA_mismatch_2017_discrete.png"
 # tmp <- volt3[[365]]
 # tmp[tmp == 0] <- NA
 # df <- as.data.frame(gddvolt * deadmask, xy=TRUE)
