@@ -16,6 +16,7 @@ dat <- dat %>%
   rowwise() %>% 
   mutate(total = ndiap + nrep,
          perc_repro = nrep/total,
+         perc_diap = ndiap/total,
          rowid = paste(trimws(site, which = "both"), year, group, sep = "_"))  %>%
   droplevels.data.frame() %>% 
   group_by(site) %>% 
@@ -48,10 +49,10 @@ dat$zlat <- as.numeric(zlat[, 1])
 mod <- glmer(perc_repro ~ zday + year + (1|rowid), weights = total, data = dat, family = binomial)
 mod1 <- glmer(perc_repro ~ (zday + zlat + zyear)^2 + (1 + zday|site), weights = total, data = dat, family = binomial)
 mod2 <- glmer(perc_repro ~ zday + zlat + zday:zlat + (1 + zday|site), weights = total, data = dat, family = binomial)
-mod3 <- glmer(perc_repro ~ photoperiod + lat + (1 + photoperiod|site), weights = total, data = dat, family = binomial)
+mod3 <- glmer(perc_repro ~ (photoperiod + lat + year)^2 + (1|site), weights = total, data = dat, family = binomial)
 
 summary(mod)
-AIC(mod1, mod2)
+AIC(mod1, mod2, mod3)
 
 # stargazer(mod2, type = "text")
 tab_model(mod2, file = "allsite_glmer.html", show.r2 = FALSE, show.icc = FALSE)
@@ -97,6 +98,52 @@ dat$sitelat <- factor(dat$sitelat, levels = cdl$sitelat[order(cdl$cdl, decreasin
 # plot(photo, prop_diap)
 
 # using unscaled variables in model to make predictions from raster easier
+# use these for ESA meeting maps
+orig <- dat %>% 
+  filter(site == "Delta") %>% 
+  mutate(photoperiod = photoperiod)
+origmod <- glm(perc_diap ~ photoperiod, weights = total, data = orig, family = binomial)
+summary(origmod)
+
+cdl_b0 <- coef(origmod)[1] 
+cdl_b1 <- coef(origmod)[2]
+photo <- seq(10, 18, length.out = 100)
+prop_diap <-  (exp(cdl_b0 + cdl_b1 * photo) /
+                     (1 + exp(cdl_b0 + cdl_b1 * photo)))
+plot(photo, prop_diap)
+
+findInt <- function(model, value) {
+  function(x) {
+    predict(model, data.frame(photoperiod=x), type="response") - value
+  }
+}
+
+uniroot(findInt(origmod, .5), range(orig$photoperiod))$root
+uniroot(findInt(origmod, .95), c(10, 18))$root
+uniroot(findInt(origmod, .05), range(orig$photoperiod))$root
+
+evol <- dat %>% 
+  filter(site == "Topock Marsh") %>% 
+  mutate(photoperiod = photoperiod)
+evolmod <- glm(perc_repro ~ photoperiod, weights = total, data = evol, family = binomial)
+summary(evolmod)
+
+cdl_b0 <- coef(evolmod)[1] 
+cdl_b1 <- coef(evolmod)[2]
+photo <- seq(10, 18, length.out = 100)
+prop_diap <-  1 - (exp(cdl_b0 + cdl_b1 * photo) /
+                     (1 + exp(cdl_b0 + cdl_b1 * photo)))
+plot(photo, prop_diap)
+
+
+uniroot(findInt(evolmod, .5), range(evol$photoperiod))$root
+uniroot(findInt(evolmod, .95), c(10, 18))$root
+uniroot(findInt(evolmod, .05), c(10, 18))$root
+
+########
+
+
+
 uniqdat <- uniqdat %>% arrange(site)
 cdl_b0 <- fixef(mod3)[1] + ranef(mod3)$site[, 1] + fixef(mod3)[3] * uniqdat$lat
 cdl_b1 <- fixef(mod3)[2]
