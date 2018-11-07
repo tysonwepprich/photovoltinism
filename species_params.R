@@ -81,8 +81,8 @@ species_params <- function(species, biotype, nsim, model_CDL){
     # Preferred output is % diapause
     if (model_CDL == 2){
       coefs <- c(NA, switch(biotype,
-                            "Original" = c(-113.039752, 7.850763 ),
-                            "Evolved" = c(-31.384807, 2.461436),
+                            "Original" = c(113.039752, -7.850763 ),
+                            "Evolved" = c(31.384807, -2.461436),
                             "Big Bend" = c(53.8274, -3.9395),
                             "Delta" = c(102.6457, -7.1704),
                             "Gold Butte" = c(83.8342, -5.9676),

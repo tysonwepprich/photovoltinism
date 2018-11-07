@@ -35,12 +35,12 @@ runparallel <- 1 # 1 for yes, 0 for no
 
 # Pest Specific, Multiple Life Stage Phenology Model Parameters:
 # model scope
-yr           <- 2017
+yr           <- 2009
 start_doy    <- 1
 end_doy      <- 365
-region_param <- "SW_MEX" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
-species      <- "DCA" # GCA/APHA/DCA
-biotype      <- "Original" # TODO: add options for each species, N or S for APHA and GCA
+region_param <- "ALL" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
+species      <- "APHA" # GCA/APHA/DCA
+biotype      <- "S" # TODO: add options for each species, N or S for APHA and GCA
 
 
 # introducing individual variation, tracked with simulation for each substage
@@ -131,6 +131,25 @@ if(weather_data_source == "daymet"){
   
   # aggregate template here, then crop in splitmap
   template <- aggregate(template, fact = 2, fun = mean, na.rm = TRUE, expand = TRUE)
+  
+  # gdd raster if needed
+  # start from end of season
+  # kludge to add pre-diapause gdd requirement for aphalara post-model run
+  for (index in 365:165){
+    tmin <- crop(aggregate(tminfile[[index]], fact = 2, fun = mean, na.rm = TRUE, expand = TRUE), template)
+    tmax <- crop(aggregate(tmaxfile[[index]], fact = 2, fun = mean, na.rm = TRUE, expand = TRUE), template)
+    dd_tmp <- overlay(tmax, tmin, template + 6.9, template + 32, fun = TriDD)
+    
+    if (!exists("dd_stack")){
+      dd_stack <- stack(dd_tmp)
+    } else {
+      dd_stack <- addLayer(dd_stack, dd_tmp)
+    }
+  }
+  
+  last <- calc(dd_stack, fun=cumsum)
+  lastday <- 365 - which.max(Cond(last > 75, 1, last))
+  
 }
 # splits template into list of 4 smaller map rasters to run in parallel
 # only doing this for CONUS, because benefit lost for smaller map sizes
@@ -374,7 +393,7 @@ if(exists("cl")){
 dataType(template) <- "INT2U"
 
 # Input directories with results
-newdirs <- "DCA_2017_ORIG" # c("DCA_2017_LL", "DCA_2017_TM")
+newdirs <-  c("APHA_2009_ALL")
 for (newname in newdirs){
   # Weighted results by substage sizes
   # Not needed for older model with only one parameter per stage
@@ -506,7 +525,7 @@ stopCluster(cl) #WINDOWS
 # # quick plot of a few days from weighted raster to check
 test <- brick(paste(newname, "diap_all.grd", sep = "/"))
 # test <- brick(paste(newname, "L_001_weighted.grd", sep = "/"))
-# test <- brick(paste(newname, "diap_003_weighted.grd", sep = "/"))
+test <- brick(paste(newname, "diap_002_weighted.grd", sep = "/"))
 plot(test[[c(200, 250, 300, 350)]])
 
 # Mosaic split maps ----
@@ -533,7 +552,7 @@ lstage <- unique(ls_index)
 
 system.time({
   foreach(i = lstage,
-          .packages = "raster") %dopar%{
+          .packages = "raster") %do%{
             
             fs <- rasfiles[which(ls_index == i)]
             fs <- fs[grep(pattern = ".grd", x = fs, fixed = TRUE)]
@@ -587,4 +606,124 @@ cleanup <- list.files(newdirs[2], full.names = TRUE)
 cleanup <- cleanup[-grep("weighted", x = cleanup)]
 # lapply(cleanup, FUN = file.remove) # CAREFUL HERE!
 
+
+
+# 6. Updating photoperiod cues ----
+# Use this to rerun new CDL values/coefs without resimulation the lifestages/numgen for speedup
+# Run steps 1 and 2 first and have model output from 3 and 4 saved in directory
+
+# Not ready yet, need to fix old choice of having lifestages in separate rasters
+# Could weighted results be used here instead???
+
+
+newname <- "DCA_2017"  # c("GCA_NWSMALL_2014", "GCA_NWSMALL_2015")
+sitedirs <- c("Original", "Evolved") # c("North_sol", "South", "South_sol")
+newdirs <- expand.grid(newname, sitedirs)
+names(newdirs) <- c("newname", "sitedir")
+
+for (n in 1:nrow(newdirs)){
+  newname <- as.character(newdirs$newname[n])
+  sitedir <- as.character(newdirs$sitedir[n])
+  
+  # if(length(grep(pattern = "sol", x = sitedir, fixed = TRUE)) == 1){
+  #   solstice <- "after"
+  # }else{
+  #   solstice <- "ignore"
+  # }
+  
+  returnwd <- getwd()
+  setwd(newname)
+  f <-list.files()
+  rasfiles <- f[grep(pattern = ".grd", x = f, fixed = TRUE)]
+  # for each sim with unique information to save
+  ls <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 2)[,1])
+  maps <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,2])
+  sims <- unique(stringr::str_split_fixed(rasfiles, pattern = "_", 3)[,3])
+  sims <- gsub(pattern = ".grd", replacement = "", x = sims)
+  sims <- sims[grep(pattern = "sim", x = sims, fixed = TRUE)]
+  mapcode <- maps # for this case, no split map
+  
+  
+  
+  if ( runparallel == 1){
+    # run simulations in parallel
+    # make this option in parameter file?
+    if (region_param %in% c("ALL", "CONUS")){
+      ncores <- nsim * 2 # trying out half the cores needed, see if writeRaster better
+    }else{
+      ncores <- nsim
+    }
+    
+    # avoid memory issues on laptop
+    if(ncores > (parallel::detectCores() / 2)){
+      ncores <- parallel::detectCores() / 2
+    }
+    cl <- makePSOCKcluster(ncores)
+    registerDoParallel(cl)
+  }
+  
+  system.time({
+    foreach(sim = sims,
+            .packages = "raster") %dopar%{
+              
+              # Varying traits from parameter file
+              stgorder   <- params$stgorder
+              relpopsize <- params$relpopsize[which(sim == sims)]
+              stage_dd   <- params$stage_dd[which(sim == sims), ]
+              stage_ldt  <- params$stage_ldt
+              stage_udt  <- params$stage_udt
+              photo_sens <- params$photo_sens
+              CDL        <- params$CDL[1]
+              cdl_b0     <- params$CDL[2]
+              cdl_b1     <- params$CDL[3]
+              
+              
+              # for (sim in sims){
+              oldfile <- rasfiles[grep(pattern = sim, x = rasfiles, fixed = TRUE)]
+              oldfile <- oldfile[grep(pattern = sens, x = oldfile, fixed = TRUE)]
+              
+              sens_stage <- brick(oldfile)
+              sens_stage <- sens_stage + template
+              LS4 <- sens_stage[[1]]
+              LS4[!is.na(LS4)] <- 0
+              if (exists("LS4stack")){
+                rm(LS4stack)
+              } 
+              
+              for (d in 1:nlayers(sens_stage)){
+                # doy <- lubridate::yday(lubridate::ymd(d))
+                doy <- as.numeric(gsub("layer.", replacement = "", x = names(sens_stage)[d]))
+                # can choose whether diapause induced before summer solstice
+                if (solstice == "after"){
+                  if (doy > 170){
+                    photo <- RasterPhoto(template, doy, perc_twilight = 25)
+                    prop_diap <- 1 - exp(cdl_b0 + cdl_b1 * photo) /
+                      (1 + exp(cdl_b0 + cdl_b1 * photo))
+                    tmpLS4 <- Cond(sens_stage[[d]] == 1, prop_diap, LS4)
+                    LS4 <- Cond(prop_diap < LS4, LS4, tmpLS4)
+                  }
+                }else{
+                  photo <- RasterPhoto(template, doy, perc_twilight = 25)
+                  prop_diap <- 1 - exp(cdl_b0 + cdl_b1 * photo) /
+                    (1 + exp(cdl_b0 + cdl_b1 * photo))
+                  tmpLS4 <- Cond(sens_stage[[d]] == 1, prop_diap, LS4)
+                  LS4 <- Cond(prop_diap < LS4, LS4, tmpLS4)
+                }
+                
+                if (!exists("LS4stack")){
+                  LS4stack <- stack(LS4)
+                } else {
+                  LS4stack <- addLayer(LS4stack, LS4)
+                }
+              }
+              
+              LS4File <- writeRaster(LS4stack, filename = paste(sitedir,"/", "LS4_", "001_", sim, sep = ""),
+                                     overwrite = TRUE, datatype = "FLT8S")
+            }
+  })
+  
+  
+  stopCluster(cl) #WINDOWS
+  setwd(returnwd)
+}
 

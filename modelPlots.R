@@ -21,16 +21,16 @@ source('species_params.R')
 # 2. User input -----
 
 # input results directory
-newname <- "DCA_2017_ORIG"
+newname <- "APHA_2009_ALL"
 
 # Pest Specific, Multiple Life Stage Phenology Model Parameters:
 # model scope
-yr           <- 2017
+yr           <- 2009
 start_doy    <- 1
 end_doy      <- 365
-region_param <- "SW_MEX"
-species      <- "DCA" # GCA/APHA/DCA
-biotype      <- "Original" # TODO: add options for each species
+region_param <- "ALL"
+species      <- "APHA" # GCA/APHA/DCA
+biotype      <- "S" # TODO: add options for each species
 
 # introducing individual variation, tracked with simulation for each substage
 # assign to 1 to match previous model versions
@@ -64,6 +64,8 @@ if (!file.exists("./src/ref/ne_50m_admin_1_states_provinces_lakes/ne_50m_admin_1
 }
 
 region <- readOGR("./src/ref/ne_50m_admin_1_states_provinces_lakes", 'ne_50m_admin_1_states_provinces_lakes', encoding='UTF-8')
+region <-spTransform(region, CRS(proj4string(template)))
+
 reg.points = fortify(region, region="name_en")
 reg.df = left_join(reg.points, region@data, by = c("id" = "name_en"))
 
@@ -700,7 +702,7 @@ writeRaster(numgen, filename = "numgen_365_gdd", datatype = "FLT4S")
 
 
 
-newname <- "DCA_2017_ORIG"
+newname <- "APHA_2009_ALL"
 
 returnwd <- getwd()
 setwd(newname)
@@ -732,14 +734,13 @@ for (day in 1:365){
 }
 
 
-plot(numgen_stack[[250]])
+plot(numgen_stack[[350]])
 
 writeRaster(numgen_stack, filename = "NumGen", overwrite = TRUE)
 
 
 numgen_stack <- brick("NumGen.grd")
 numgen_stack <- numgen_stack[[1:365]]
-
 
 
 
@@ -760,21 +761,26 @@ plot(ffrost)
 numgen_frost <- stackSelect(numgen_stack, ffrost)
 
 # numgen with diapause
+gddvolt <- stackSelect(calc(numgen_stack, function(x){cummax(x)}), lastday)
+diap <- stackSelect(stack("diap_all.grd"), lastday)
+# old way
+threshold <- .95
 volt <- numgen_stack
-diap <- 1000 - stack("diap_001_weighted.grd")
-threshold <- .75
 volt <- Cond(diap <= threshold * 1000, volt, 1)
-volt2 <- calc(volt, function(x){cummax(x)})
+# volt <- volt * (1 - diap / 1000)
+# volt <- numgen_stack - (1 - diap)
+volt2 <- stackSelect(calc(volt, function(x){cummax(x)}), lastday)
 
-dead <- Cond(volt2[[365]] == 0, 0, volt2[[365]])
+volt3 <- volt2 + (1 - diap/1000)
+
+dead <- Cond(volt[[365]] == 0, 0, volt[[365]])
 deadmask <- Cond(dead > 0, 1, 0)
 deadmask[deadmask == 0] <- NA
 
-volt3 <- volt2 * deadmask
-
+volt4 <- volt3 * deadmask
 # mismatch
 # ng_gdd <- brick("numgen_365_gdd.grd")
-mmvolt <- (numgen_stack[[365]] - volt2[[365]]) * deadmask
+mmvolt <- (gddvolt - volt4) * deadmask
 plot(mmvolt)
 
 # partial generations not making it to diapause stage
@@ -788,9 +794,14 @@ d + scale_colour_gradient2(low=muted("red"), high=muted("blue"))
 
 
 
-plttitle <- "Aphalara voltinism mismatch with photoperiod-cued diapause"
-pltname <- "APHA_numgen_mismatch_continuous.png"
+plttitle <- "Aphalara voltinism mismatch with photoperiod cue"
+pltname <- "APHA_mismatch_2009_discrete.png"
+# tmp <- volt3[[365]]
+# tmp[tmp == 0] <- NA
+# df <- as.data.frame(gddvolt * deadmask, xy=TRUE)
+# df <- as.data.frame(volt4, xy=TRUE)
 df <- as.data.frame(mmvolt, xy=TRUE)
+
 names(df)[3] <- "Voltinism"
 
 
@@ -803,29 +814,32 @@ minvolt <- min(df$Voltinism, na.rm = TRUE)
 df$Voltinism <- factor(df$Voltinism, levels = c(minvolt:maxvolt))
 
 # levels(df$Voltinism) <- c(levels(df$Voltinism)[1:6], rep("7+", 5))
-levels(df$Voltinism) <- c(levels(df$Voltinism)[1:5], rep("3+", 8))
+levels(df$Voltinism) <- c(levels(df$Voltinism)[1:5], rep("4+", 6))
 
 df <- df %>% 
   # mutate(Voltinism = ifelse(is))
   filter(!is.na(Voltinism)) %>% 
-  mutate(Voltinism = ifelse(Voltinism >= 3, 3, Voltinism))
+  mutate(Voltinism = ifelse(Voltinism >= 4, 4, Voltinism))
+  # mutate(Voltinism = ifelse(Voltinism <= -3, -3, Voltinism))
 
 
 
-reg.df <- reg.df %>% 
-  filter(long >= min(df$x), long <= max(df$x),
-         lat >= min(df$y), lat <= max(df$y))
-theme_set(theme_void(base_size = 20)) 
+# 
+# reg.df <- reg.df %>% 
+#   filter(long >= min(df$x), long <= max(df$x),
+#          lat >= min(df$y), lat <= max(df$y))
+theme_set(theme_void(base_size = 18)) 
 
 tmpplt <- ggplot(data = df, aes(x, y, fill = Voltinism)) +
   geom_raster() +
+  # coord_fixed(1.3) +
   geom_polygon(data = reg.df, aes(x = long, y = lat, group = group), fill = NA, color = "dark gray", inherit.aes = FALSE, size = .25) +
-  coord_fixed(1.3) +
-  scale_fill_viridis(name = "Generations", na.value = "white", begin = 0, end = 1, discrete = FALSE) +
-  # scale_fill_gradient2(low=muted("red"), high=muted("blue")) +
-  # scale_fill_brewer(guide = guide_legend(reverse = TRUE), type = "div", palette = "RdBu") +
+  # scale_fill_viridis(breaks = seq(0, 10, by = 1), name = "Generations", na.value = "white", begin = 0, end = 1, discrete = FALSE) +
+  # scale_fill_gradient2(low=muted("red"), high=muted("blue"), midpoint = 0) +
+  scale_fill_brewer(guide = guide_legend(reverse = TRUE), type = "div", palette = "RdBu") +
   ggtitle(plttitle) +
-  theme(legend.position = c(0.85, 0.4), plot.title = element_text(hjust = 0.5))
+  coord_fixed(1.3, xlim = c(min(df$x), max(df$x)), ylim = c(min(df$y), max(df$y)), expand = FALSE, clip = "on") +
+  theme(legend.position = c(0.1, 0.15), plot.title = element_text(hjust = 0.5))
 tmpplt
 ggsave(pltname,
        plot = tmpplt, device = "png", width = 18, height = 11, units = "in")

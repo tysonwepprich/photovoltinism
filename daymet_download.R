@@ -8,7 +8,7 @@ library(maps)
 library(maptools)
 library(dplyr)
 
-weather_path <- "daymet"
+weather_path <- "daymet/2009"
 
 class(tile_outlines)
 
@@ -26,7 +26,7 @@ dl_tiles <- unique(test$TileID)
 
 # download daymet netcdf tiles, reproject to PRISM, save as R Raster (.grd)
 
-yrs <- c(2015:2017)
+yrs <- 2009
 library(foreach)
 library(doParallel)
 cl <- makePSOCKcluster(20)
@@ -79,6 +79,12 @@ outfiles <- foreach(year = 1:length(yrs),
             }
           }
 
+# for some reason, the above loop hangs up and says its still working
+# even when all tiles have been downloaded succesfully
+# have to kill R sessions in command line
+
+
+
 if(exists("cl")){
   stopCluster(cl)
 }
@@ -99,7 +105,7 @@ for(year in 1:length(yrs)){
 
 grddf <- data.frame(row = 1:length(grdfiles), name = unlist(grdfiles))
 
-exist <- list.files("daymet", full.names = TRUE)
+exist <- list.files(weather_path, full.names = TRUE)
 existdf <- data.frame(name = exist[grep(pattern = ".grd", x = exist, fixed = TRUE)])
 
 rerundf <- grddf %>% 
@@ -146,12 +152,15 @@ outfiles <- foreach(rr = 1:nrow(rerundf),
 
 
 # stitch together canada and mexico tiles by year and tmin/tmax
+# has to first stitch together each row of tiles, otherwise uses too much memory
 library(stringr)
 library(purrr)
 tiles <- list.files(weather_path, recursive = FALSE, full.names = TRUE)
 tiles <- tiles[grep(pattern = ".grd", x = tiles, fixed = TRUE)]
 tile_params <- str_split_fixed(tiles, pattern = coll("."), n = 2)[, 1]
-tile_params <- str_split_fixed(tile_params, pattern = coll("/"), n = 2)[, 2]
+# below, needs adjustment for number of slashes in weather_path
+# TODO: change this so automatic
+tile_params <- str_split_fixed(tile_params, pattern = coll("/"), n = 3)[, 3]
 
 temp <- str_split_fixed(tile_params, pattern = coll("_"), n = 3)
 temps <- temp[, 1]
@@ -161,15 +170,15 @@ tilerow <- substr(tilenames, 1, 3)
 
 # rmfiles <- tiles[grep(pattern = "11548", x = tiles, fixed = TRUE)]
 
-cl <- makePSOCKcluster(2)
-registerDoParallel(cl)
+# cl <- makePSOCKcluster(2)
+# registerDoParallel(cl)
 
 outfiles <- foreach(year = 1:length(yrs),
                     .packages= c("raster", "daymetr"),
-                    .inorder = FALSE)%dopar%{
-  # foreach(varname = 1:2,
-  #         .packages= c("raster", "daymetr"),
-  #         .inorder = FALSE)%dopar%{
+                    .inorder = FALSE)%:%
+  foreach(varname = 1:2,
+          .packages= c("raster", "daymetr"),
+          .inorder = FALSE)%dopar%{
                       
                       varname = 1
                       yr <- yrs[year]
