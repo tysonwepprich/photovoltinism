@@ -24,8 +24,8 @@ source('species_params.R')
 # directory with daily tmax and tmin raster files
 # PRISM: need to download CONUS which takes a lot of space
 # Daymet: can download what you need with bounding box
-weather_path <- "prism"
-download_daily_weather <- 1 # 1 if you need to download PRISM/Daymet data first (20 minutes)
+weather_path <- "data/PRISM/2017"
+download_daily_weather <- 0 # 1 if you need to download PRISM/Daymet data first (20 minutes)
 weather_data_source <- "prism" # or 'prism'
 
 # directory to hold temporary raster results
@@ -45,7 +45,7 @@ biotype      <- "S" # TODO: add options for each species, N or S for APHA and GC
 
 # introducing individual variation, tracked with simulation for each substage
 # assign to 1 to match previous model versions
-nsim <- 7 # number of substages/cohorts to approximate emergence distribution
+nsim <- 3 # number of substages/cohorts to approximate emergence distribution
 
 # photoperiod decision inclusion
 # 2 for logistic, 1 for single value CDL, 0 for none
@@ -176,7 +176,7 @@ if ( runparallel == 1){
 # if errors with some sims/maps, rerun foreach loop below again for them
 # use folders left in raster tmp directory to know which didn't work
 
-system.time({
+test <- system.time({
   outfiles <- foreach(sim = 1:nsim,
                       # outfiles <- foreach(sim = 5, # if some runs don't work, rerun individually
                       .packages= "raster",
@@ -221,17 +221,17 @@ system.time({
               # for (index in seq_along(tminfiles)) {
               for (index in start_doy:end_doy) {
                 
-                # get daily temperature, crop to REGION
+                # # get daily temperature, crop to REGION
                 tmin <- crop(raster(tminfiles[index]), template)
                 tmax <- crop(raster(tmaxfiles[index]), template)
-
-                # # DAYMET, already bricked and cropped to REGION
-                # # get daily temperature, crop to SplitMap
-                # # tmin <- crop(tminfile[[index]], template)
-                # # tmax <- crop(tmaxfile[[index]], template)
+                
+                # DAYMET, already bricked and cropped to REGION
+                # get daily temperature, crop to SplitMap
+                # tmin <- crop(tminfile[[index]], template)
+                # tmax <- crop(tmaxfile[[index]], template)
                 # tmin <- crop(aggregate(tminfile[[index]], fact = 2, fun = mean, na.rm = TRUE, expand = TRUE), template)
                 # tmax <- crop(aggregate(tmaxfile[[index]], fact = 2, fun = mean, na.rm = TRUE, expand = TRUE), template)
-                # 
+                
                 # photoperiod for this day across raster
                 # TODO: could be done outside of loop for speed up
                 if (model_CDL != 0){
