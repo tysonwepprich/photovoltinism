@@ -24,9 +24,9 @@ source('species_params.R')
 # directory with daily tmax and tmin raster files
 # PRISM: need to download CONUS which takes a lot of space
 # Daymet: can download what you need with bounding box
-weather_path <- "daymet"
-download_daily_weather <- 0 # 1 if you need to download PRISM/Daymet data first (20 minutes)
-weather_data_source <- "daymet" # or 'prism'
+weather_path <- "prism"
+download_daily_weather <- 1 # 1 if you need to download PRISM/Daymet data first (20 minutes)
+weather_data_source <- "prism" # or 'prism'
 
 # directory to hold temporary raster results
 myrastertmp <- "~/REPO/photovoltinism/rastertmp/"
@@ -38,7 +38,7 @@ runparallel <- 1 # 1 for yes, 0 for no
 yr           <- 2017
 start_doy    <- 1
 end_doy      <- 365
-region_param <- "ALL" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
+region_param <- "NORTHWEST" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
 species      <- "APHA" # GCA/APHA/DCA
 biotype      <- "S" # TODO: add options for each species, N or S for APHA and GCA
 
@@ -98,11 +98,11 @@ if (weather_data_source == "prism"){
   # Add option for GDD pre-calculated (if all stages have same traits)
   # send file names to for loop
   pattern = paste("(PRISM_tmin_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
-  tminfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
+  tminfiles <- list.files(path = weather_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
   tminfiles <- ExtractBestPRISM(tminfiles, yr, leap = "keep")[start_doy:end_doy]
   
   pattern = paste("(PRISM_tmax_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
-  tmaxfiles <- list.files(path = prism_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
+  tmaxfiles <- list.files(path = weather_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
   tmaxfiles <- ExtractBestPRISM(tmaxfiles, yr, leap = "keep")[start_doy:end_doy]
 }
 if (weather_data_source == "daymet"){
@@ -221,17 +221,17 @@ system.time({
               # for (index in seq_along(tminfiles)) {
               for (index in start_doy:end_doy) {
                 
-                # # get daily temperature, crop to REGION
-                # tmin <- crop(raster(tminfiles[index]), template)
-                # tmax <- crop(raster(tmaxfiles[index]), template)
-                
-                # DAYMET, already bricked and cropped to REGION
-                # get daily temperature, crop to SplitMap
-                # tmin <- crop(tminfile[[index]], template)
-                # tmax <- crop(tmaxfile[[index]], template)
-                tmin <- crop(aggregate(tminfile[[index]], fact = 2, fun = mean, na.rm = TRUE, expand = TRUE), template)
-                tmax <- crop(aggregate(tmaxfile[[index]], fact = 2, fun = mean, na.rm = TRUE, expand = TRUE), template)
-                
+                # get daily temperature, crop to REGION
+                tmin <- crop(raster(tminfiles[index]), template)
+                tmax <- crop(raster(tmaxfiles[index]), template)
+
+                # # DAYMET, already bricked and cropped to REGION
+                # # get daily temperature, crop to SplitMap
+                # # tmin <- crop(tminfile[[index]], template)
+                # # tmax <- crop(tmaxfile[[index]], template)
+                # tmin <- crop(aggregate(tminfile[[index]], fact = 2, fun = mean, na.rm = TRUE, expand = TRUE), template)
+                # tmax <- crop(aggregate(tmaxfile[[index]], fact = 2, fun = mean, na.rm = TRUE, expand = TRUE), template)
+                # 
                 # photoperiod for this day across raster
                 # TODO: could be done outside of loop for speed up
                 if (model_CDL != 0){
@@ -508,7 +508,7 @@ stopCluster(cl) #WINDOWS
 
 # # quick plot of a few days from weighted raster to check
 test <- brick(paste(newname, "diap_all.grd", sep = "/"))
-# test <- brick(paste(newname, "L_001_weighted.grd", sep = "/"))
+test <- brick(paste(newname, "L_001_weighted.grd", sep = "/"))
 test <- brick(paste(newname, "diap_002_weighted.grd", sep = "/"))
 plot(test[[c(200, 250, 300, 350)]])
 

@@ -23,7 +23,7 @@ source('species_params.R')
 # 2. User input -----
 
 # input directory with DDRP results
-newname <- "APHA_2017_ALL"
+newname <- "APHA_2009_ALL"
 
 # make map template for CRS, extent, etc.
 template <- brick(paste0(newname, "/diap_all.grd"))[[1]]
@@ -87,6 +87,48 @@ plot(numgen_stack[[350]])
 writeRaster(numgen_stack, filename = "NumGen", overwrite = TRUE)
 
 # 4. Processing rasters for maps ----
+yr <- 2009
+weather_path <- "daymet"
+tmaxfile <- brick(paste0(weather_path, "/tmax_", yr, ".grd"))
+tminfile <- brick(paste0(weather_path, "/tmin_", yr, ".grd"))
+
+for (index in 1:365){
+  tmin <- crop(aggregate(tminfile[[index]], fact = 2, fun = mean, na.rm = TRUE, expand = TRUE), template)
+  tmax <- crop(aggregate(tmaxfile[[index]], fact = 2, fun = mean, na.rm = TRUE, expand = TRUE), template)
+  dd_tmp <- overlay(tmax, tmin, template + 6.9, template + 32, fun = TriDD)
+  
+  if (!exists("dd_stack")){
+    dd_stack <- stack(dd_tmp)
+  } else {
+    dd_stack <- addLayer(dd_stack, dd_tmp)
+  }
+}
+
+accumdd <- calc(dd_stack, fun=cumsum)
+accumdd <- crop(accumdd, template)
+
+for (index in 365:165){
+ dd_tmp <- dd_stack[[index]]
+  if (!exists("dd_stack2")){
+    dd_stack2 <- stack(dd_tmp)
+  } else {
+    dd_stack2 <- addLayer(dd_stack2, dd_tmp)
+  }
+}
+
+last <- calc(dd_stack, fun=cumsum)
+lastday <- 365 - which.max(Cond(last > 75, 1, last))
+
+# potential voltinism, must complete lifecycle
+# quick map for entsoc before fixing model
+gddvolt <- floor((accumdd[[365]] - 220) / 620)
+
+# # aggregate template here, then crop in splitmap
+# template <- aggregate(template, fact = 2, fun = mean, na.rm = TRUE, expand = TRUE)
+# 
+
+returnwd <- getwd()
+setwd(newname)
 # load RasterBrick of generations
 numgen_stack <- brick("NumGen.grd")[[1:365]]
 
@@ -127,9 +169,9 @@ plot(mmvolt)
 # 5. Pretty maps ----
 # TODO: make naming files automatic
 # continuous vs discrete color scales not automatic yet either, choose below
-map_type <- "mismatch" # "potential", "attempted"
-plttitle <- "Aphalara voltinism mismatch with photoperiod cue"
-pltname <- "APHA_mismatch_2017_discrete.png"
+map_type <- "attempted" # "potential", "attempted"
+plttitle <- "Aphalara attempted voltinism with photoperiodic cue"
+pltname <- "APHA_attempted_2009_continuous.png"
 
 
 to_map <- switch(map_type,
@@ -147,7 +189,7 @@ maxvolt <- max(df$Voltinism, na.rm = TRUE)
 minvolt <- min(df$Voltinism, na.rm = TRUE)
 df$Voltinism <- factor(df$Voltinism, levels = c(minvolt:maxvolt))
 # change levels manually as desired
-levels(df$Voltinism) <- c(levels(df$Voltinism)[1:5], rep("4+", 7))
+levels(df$Voltinism) <- c(levels(df$Voltinism)[1:5], rep("4+", 6))
 df <- df %>% 
   filter(!is.na(Voltinism))
 
@@ -155,7 +197,7 @@ df <- df %>%
 # continuous voltinism for visual
 df <- df %>% 
   filter(!is.na(Voltinism)) %>% 
-  mutate(Voltinism = ifelse(Voltinism >= 4, 4, Voltinism))
+  mutate(Voltinism = ifelse(Voltinism >= 5, 5, Voltinism))
 
 
 # Plot, several options for scaling, choose one
@@ -166,9 +208,9 @@ theme_set(theme_void(base_size = 18))
 tmpplt <- ggplot(data = df, aes(x, y, fill = Voltinism)) +
   geom_raster() +
   geom_polygon(data = reg.df, aes(x = long, y = lat, group = group), fill = NA, color = "dark gray", inherit.aes = FALSE, size = .25) +
-  # scale_fill_viridis(breaks = seq(0, 10, by = 1), name = "Generations", na.value = "white", begin = 0, end = 1, discrete = TRUE) +
+  scale_fill_viridis(breaks = seq(1, 9, by = 2), name = "Generations", na.value = "white", begin = 0, end = 1, discrete = FALSE) +
   # scale_fill_gradient2(low=muted("red"), high=muted("blue"), midpoint = 0) +
-  scale_fill_brewer(guide = guide_legend(reverse = TRUE), type = "div", palette = "RdBu") +
+  # scale_fill_brewer(guide = guide_legend(reverse = TRUE), type = "div", palette = "RdBu") +
   ggtitle(plttitle) +
   coord_fixed(1.3, xlim = c(min(df$x), max(df$x)), ylim = c(min(df$y), max(df$y)), expand = FALSE, clip = "on") +
   theme(legend.position = c(0.1, 0.15), plot.title = element_text(hjust = 0.5))

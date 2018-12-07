@@ -18,16 +18,18 @@ library(purrr)
 # library(stringr)
 library(daymetr)
 library(ggridges)
+library(profvis)
 
 # Utility functions
 source('CDL_funcs.R')
 
+system.time({
 # User input species traits ----
 nsim <- 100
 lat <- 44.56400
 lon <- -123.26300 
-startyear <- 2018
-endyear <- 2018
+startyear <- 2015
+endyear <- 2015
 # TODO: 3 biocontrol species parameters set for you with biotypes
 # custom species params
 ldt <- 10
@@ -41,7 +43,7 @@ cdl_sd <- .5
 emerg_dd_sd <- 5
 gen_dd_sd <- 30
 povip_dd_sd <- 10
-lambda <- 3.5 # population growth rate function of multiple eggs laid per adult, plus random mortality
+lambda <- 1 # population growth rate function of multiple eggs laid per adult, plus random mortality
 pars <- data.frame(ldt = ldt, udt = udt, cdl = cdl, emerg_dd = emerg_dd,
                    gen_dd = gen_dd, povip_dd = povip_dd, ovip_dd, cdl_sd = cdl_sd, 
                    emerg_dd_sd = emerg_dd_sd, gen_dd_sd = gen_dd_sd, 
@@ -66,16 +68,16 @@ gdd <- temp$data %>%
 
 # Current year forecast ----
 
-# import data from daterange code
-resdf <- readRDS("currentyrtemp.rds")
-
-gdd <- resdf %>% 
-  filter(yday < 350) %>% 
-  arrange(yday) %>% 
-  mutate(accumdegday = cumsum(DD),
-         daylength = photoperiod(44.564, yday),
-         year = 2018)
-
+# # import data from daterange code
+# resdf <- readRDS("currentyrtemp.rds")
+# 
+# gdd <- resdf %>% 
+#   filter(yday < 350) %>% 
+#   arrange(yday) %>% 
+#   mutate(accumdegday = cumsum(DD),
+#          daylength = photoperiod(44.564, yday),
+#          year = 2018)
+# 
 
 
 
@@ -181,6 +183,9 @@ results <- sims %>%
   do(SimLifecycle(pars, nsim, .$year, gdd))
 
 # results <- SimLifecycle(pars, nsim, 2018, gdd)
+
+
+}) #/profvis
 
 # Marginal histograms ----
 mean_cdl <- mean(results$cdl, na.rm = TRUE)
