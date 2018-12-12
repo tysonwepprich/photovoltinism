@@ -24,7 +24,7 @@ source('species_params.R')
 # directory with daily tmax and tmin raster files
 # PRISM: need to download CONUS which takes a lot of space
 # Daymet: can download what you need with bounding box
-weather_path <- "data/PRISM/2017"
+weather_path <- "/data/PRISM/2015"
 download_daily_weather <- 0 # 1 if you need to download PRISM/Daymet data first (20 minutes)
 weather_data_source <- "prism" # or 'prism'
 
@@ -187,7 +187,6 @@ test <- system.time({
             .inorder = FALSE) %dopar%{
               # .inorder = FALSE) %do%{
               
-              # profvis::profvis({
               # creates unique filepath for directory to store results
               tmppath <- paste0(myrastertmp, "run", maps, sim)
               dir.create(path = tmppath, showWarnings = FALSE)
@@ -341,13 +340,13 @@ test <- system.time({
                 writeRaster(diap_stack, filename = paste(newname, "/diap_", mapcode, "_sim", sim, sep = ""),
                             overwrite = TRUE, datatype = "INT2U")
               }
+              
               # memory management
               rm(numgen_stack, LS_stack, diap_stack)
               # delete entire raster temp directory without affecting other running processes
               unlink(tmppath, recursive = TRUE)
               gc()
               
-              # }) # profvis
             } # close foreach loop
 }) #system.time
 
