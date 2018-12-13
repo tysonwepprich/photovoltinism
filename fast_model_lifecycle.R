@@ -35,21 +35,21 @@ weather_data_source <- "prism"
 myrastertmp <- "~/REPO/photovoltinism/rastertmp/"
 # run simulations with parallel processing
 runparallel <- 1 # 1 for yes, 0 for no
-ncores <- 5 # choose number of cores for parallel
+ncores <- 4 # choose number of cores for parallel
 
 # Pest Specific, Multiple Life Stage Phenology Model Parameters:
 # model scope
 yr           <- 2015
 start_doy    <- 1
 end_doy      <- 365
-region_param <- "CONUS" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
+region_param <- "NORTHWEST" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
 species      <- "APHA" # GCA/APHA/DCA
 biotype      <- "S" # TODO: add options for each species, N or S for APHA and GCA
 
 
 # introducing individual variation, tracked with simulation for each substage
 # assign to 1 to match previous model versions
-ncohort <- 7 # number of substages/cohorts to approximate emergence distribution
+ncohort <- 25 # number of substages/cohorts to approximate emergence distribution
 
 # photoperiod decision inclusion
 # 2 for logistic, 1 for single value CDL, 0 for none
@@ -201,15 +201,12 @@ test <- system.time({
                          ls_ldt <- matrix(stage_ldt[as.vector(lifestage)], 
                                           nrow = ncohort,
                                           ncol = length(template), 
-                                          byrow=FALSE)
+                                          byrow = FALSE)
                          ls_udt <- matrix(stage_udt[as.vector(lifestage)], 
                                           nrow = ncohort,
                                           ncol = length(template), 
-                                          byrow=FALSE)
-                         ls_dd  <- matrix(stage_dd[as.vector(lifestage)],
-                                          nrow = ncohort,
-                                          ncol = length(template), 
-                                          byrow=FALSE)
+                                          byrow = FALSE)
+                         ls_dd  <- t(sapply(1:ncohort, FUN = function(x) stage_dd[x, ][lifestage[x, ]]))
                          
                          # Calculate stage-specific degree-days for each cell per day
                          dd_tmp <- TriDD(tmax, tmin, ls_ldt, ls_udt)
@@ -221,7 +218,7 @@ test <- system.time({
                          # Calculate lifestage progression: Is accumulation > lifestage requirement
                          progress <- dd_accum >= ls_dd
                          # If reproductive adult stage progressed, that cell has oviposition and generation count increases
-                         numgen <- numgen + (progress == 1 & lifestage == which(stgorder == "A")) 
+                         numgen <- numgen + (progress == 1 & lifestage %in% which(stgorder %in% c("A", "OA"))) 
                          fullgen <- fullgen + (progress == 1 & lifestage == (length(stgorder) - 1)) # reaches OW stage
                          # Reset the DDaccum cells to zero for cells that progressed to next lifestage
                          lifestage <- lifestage + progress
@@ -289,14 +286,15 @@ stopCluster(cl)
 
 
 # check results by plotting values assigned to raster
-# array dimensions: [pixel, day, results]
-plot(setValues(geo_template, outlist[, 53, 3]))
+# array dimensions: [pixel, week, results]
+plot(setValues(geo_template, outlist[, 53, 6]))
 
-gdd <- setValues(template, outlist[, 365, 4, 1])
-outlist <- outlist[,,-4,]
-# plot time series of lifestage at a single pixel for cohort 1
-plot(outlist[50000, , 1, 1])
+# plot time series of lifestage at a single pixel for weighted cohorts
+plot(outlist[50000, , 5])
 
+
+
+# OLD WAY: weighting cohorts after the foreach loop
 # weight the cohorts for each lifestage
 cl <- makePSOCKcluster(15)
 registerDoParallel(cl)
@@ -317,13 +315,4 @@ test <- system.time({
 # -not saving every single day in the results to save disk space
 
 
-
-
-
-
-
-
-
-
-res_array[, index, 4] <- dd_tmp 
 

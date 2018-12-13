@@ -25,14 +25,38 @@ lon <- ncvar_get(nc,"air_temperature")
 
 tmin <- tmin[[1]]
 tmax <- tmax[[1]]
+
 # longitude in degrees EAST
 # time is days since 1900-01-01 00:00:00
 # temperature in K? -273.15
 # easier to adjust insect temperature threshold to kelvin than do extra addition on each raster
-
 dd <- TriDD(tmax, tmin, LDT = 10 + 273.15, UDT = 37.8 + 273.15)
 
+macafile <- "data/maca/macav2metdata_tasmin_IPSL-CM5A-MR_r1i1p1_rcp85_2046_2050_CONUS_daily.nc"
 
 
+# Function to split 5-year data into yearly tmin/tmax files for use in lifecycle model
+SplitMACA <- function(macafile){
+  ras <- brick(macafile, 
+               varname = "air_temperature", lvar = 3, level = 4)
+  
+  yrs <- gregexpr(pattern = "[0-9]{4}", text = macafile)
+  yr1 <- as.numeric(substr(macafile, start = yrs[[1]][1], stop = yrs[[1]][1] + 3))
+  yr2 <- as.numeric(substr(macafile, start = yrs[[1]][2], stop = yrs[[1]][2] + 3))
+  var <- sub(pattern = "as", replacement = "", x = stringr::str_split_fixed(macafile, pattern = "_", n = 3)[, 2], fixed = TRUE)
+  
+  # # account for leap years
+  # days <- rep(floor(dim(ras)[3] / 5), length(c(yr1:yr2)))
+  # days[which(c(yr1:yr2) %% 4 == 0)] <- 366
+  
+  for (y in yr1:yr2){
+    newname <- paste0("MACAV2_", var, "_", y, ".grd")
+    newras <- ras[[which(lubridate::year(as.Date(getZ(ras))) == y)]]
+    dir.create(paste0("data/maca/", y))
+    writeRaster(x = newras, filename = paste("data", "maca", y, newname, sep = "/"), format = "raster", overwrite = TRUE)
+  }
+}
+
+SplitMACA(macafile)
 
 
