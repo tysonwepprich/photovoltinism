@@ -1,12 +1,8 @@
 # Speeding up raster-based model with arrays (cohort x pixel)
 # Universal code for 3 biocontrol species
 # Any number of lifestages allowed
+# IBM version
 
-# TODO:
-# 1. Download stable PRISM files to GRUB, many months/years not updated
-# 2. MACAV2 option for forecasts
-# 3. Redo mapping functions to use new results format
-# 4. Add CDL values to foreach loop with goal to find optimal photoperiod response for each pixel
 
 # 1. Setup -------
 # packages, options, functions loaded
@@ -22,17 +18,18 @@ source('species_params.R')
 
 # 2. User input -----
 # directory with daily tmax and tmin raster files
-weather_path <- "prism"
+# weather_path <- "prism"
 # weather_path <- "data/maca"
-# weather_path <- "/data/PRISM" # PRISM data on grub server (needs to have stable files downloaded)
+weather_path <- "/data/PRISM" # PRISM data on grub server (needs to have stable files downloaded)
 download_daily_weather <- 0 # 1 if you need to download PRISM/Daymet data first (20 minutes)
 # weather_data_source <- "macav2" # could also have daymet or macav2
 weather_data_source <- "prism"
 
 # use parallel processing
 # splits raster into chunks for running through simulation
-runparallel <- 1 # 1 for yes, 0 for no
-ncores <- 8 # choose number of cores for parallel
+runparallel <- 0 # 1 for yes, 0 for no
+ncores <- 1 # choose number of cores for parallel\
+time_interval <- 1 # number of days between results that are saved (7 = weekly), saves disk space and memory if not daily
 
 # Pest Specific, Multiple Life Stage Phenology Model Parameters:
 # model scope
@@ -40,13 +37,12 @@ yr           <- 2015
 start_doy    <- 1
 end_doy      <- 365
 region_param <- "NORTHWEST" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
-species      <- "APHA" # GCA/APHA/DCA
+species      <- "GCA" # GCA/APHA/DCA
 biotype      <- "S" # TODO: add options for each species, N or S for APHA and GCA
 
 
-# introducing cohort variation
-# assign to 1 to match previous model versions
-ncohort <- 15 # number of cohorts to approximate emergence distribution
+# individual variation
+ncohort <- 10 # number of cohorts to approximate emergence distribution
 
 # photoperiod decision inclusion
 # 2 for logistic, 1 for single value CDL, 0 for none
@@ -139,8 +135,12 @@ chunk2 <- function(x,n){
     list(x)
   }
 }
-chunk_list <- chunk2(getValues(geo_template), ncores)
 
+# testing one pixel at a time
+ncores <- length(geo_template)
+chunk_list <- chunk2(getValues(geo_template), ncores)
+# choose one pixel to run
+chunk <- which(round(getValues(init(geo_template, "x")), 1) == -119.5 & round(getValues(init(geo_template, "y")), 1) == 46.5)[1]
 
 # function needed to combine array results with foreach
 acomb4 <- function(...) abind::abind(..., along = 4)
@@ -151,34 +151,30 @@ acomb1 <- function(...) abind::abind(..., along = 1)
 
 test <- system.time({
   
-  outlist <- foreach(chunk = 1:ncores,
-                     .packages = "raster",
-                     .inorder = TRUE,
-                     .combine = 'acomb1',
-                     .multicombine = TRUE) %dopar%{
-                       
+  # outlist <- foreach(chunk = 1:ncores,
+  #                    .packages = "raster",
+  #                    .inorder = TRUE,
+  #                    .combine = 'acomb1',
+  #                    .multicombine = TRUE) %dopar%{
+  #                      
                        
                        template <- chunk_list[[chunk]]
                        
-                       template_mat <- matrix(template, 
-                                              nrow = ncohort,
-                                              ncol = length(template), 
-                                              byrow=TRUE)
+                       template_mat <- rep(template, times = ncohort)
                        
                        # latitudes for photoperiod model
                        lats <- chunk2(getValues(init(geo_template, 'y')), ncores)[[chunk]]
                        
                        
                        # create array to hold results
-                       # only track weekly results to save disk space/memory
                        # output variables: lifestage, numgen, daily degree-days
-                       ls_array <- array(data = NA, dim = c(length(template), 
-                                                            length(seq(start_doy, end_doy, by = 7)), 
-                                                            length(params$stgorder) + 6)) 
+                       ls_array <- array(data = NA, dim = c(
+                         length(seq(start_doy, end_doy, by = time_interval)), 
+                         length(params$stgorder) + 6)) 
                        
                        # Varying traits from parameter file
                        stgorder   <- params$stgorder
-                       relpopsize <- params$relpopsize
+                       # relpopsize <- params$relpopsize
                        stage_dd   <- params$stage_dd
                        stage_ldt  <- params$stage_ldt
                        stage_udt  <- params$stage_udt
@@ -187,22 +183,41 @@ test <- system.time({
                        cdl_b0     <- params$CDL[2]
                        cdl_b1     <- params$CDL[3]
                        
-                       # Track degree-day accumulation per cell per day
-                       dd_accum <- template_mat
-                       # Weather variables to track (no cohort dimension needed)
-                       dd_total <- template
-                       first_frost <- template
-                       last_frost <- template
-                       # Overwintering as stage 1, all cells start here
-                       # Track lifestage for each cell per day
-                       lifestage <- template_mat + 1
-                       # Track voltinism and diapause per cell per day, starting at 0
-                       numgen <- template_mat
-                       fullgen <- template_mat
-                       diap <- template_mat
+                       # vector of which individuals to simulate from data.frame
+                       ind_df <- data.frame(stage_dd)
+                       names(ind_df) <- stgorder
+                       
+                       ls_complete <- data.frame(array(data = 0, dim = dim(stage_dd)))
+                       names(ls_complete) <- paste(stgorder, "DOY", sep = "_")
+                       
+                       ind_df <- cbind(ind_df, ls_complete)
+                       ind_df$dd_accum <- 0
+                       ind_df$dd_total <- 0
+                       ind_df$first_frost <- 0
+                       ind_df$last_frost <- 0
+                       ind_df$diapause <- -1
+                       ind_df$numgen <- 0
+                       ind_df$parent <- NA
+                       ind_df$lifestage <- 1
+                       ind_df$indiv <- 1:nrow(ind_df)
+                       ind_df$active <- 1    # this will indicate rows to simulate each day
                        
                        # Loop over days ----
                        for (index in 1:length(start_doy:end_doy)) {
+                         
+                         ncohort <- sum(ind_df$active)
+                         if (ncohort == 0) break
+                         
+                         # data.frames to track individuals
+                         newdf <- ind_df[which(ind_df$active == 1), ]
+                         olddf <- ind_df[-which(ind_df$active == 1), ]
+                         
+                         lifestage <- newdf$lifestage
+                         dd_accum <- newdf$dd_accum
+                         dd_total <- newdf$dd_total
+                         diap <- newdf$diapause
+                         stage_dd <- as.matrix(newdf[, stgorder])
+                         
                          doy <- start_doy + index - 1
                          # # get daily temperature, crop to REGION
                          if (weather_data_source == "prism"){
@@ -215,56 +230,45 @@ test <- system.time({
                          }
                          # frost boundaries to growing season
                          if(doy <= 182){
-                           last_frost <- Cond(tmin <= -2, doy, last_frost)
+                           newdf$last_frost <- Cond(tmin <= -2, doy, newdf$last_frost)
                          }
                          if(doy >= 183){
-                           first_frost <- Cond(first_frost == 0, (tmin <= -2) * doy, first_frost)
+                           newdf$first_frost <- Cond(newdf$first_frost == 0, (tmin <= -2) * doy, newdf$first_frost)
                          }
                          
-                         tmax <- matrix(tmax, 
-                                        nrow = ncohort,
-                                        ncol = length(template), 
-                                        byrow=TRUE)
-                         tmin <- matrix(tmin, 
-                                        nrow = ncohort,
-                                        ncol = length(template), 
-                                        byrow=TRUE)
+                         tmax <- rep(tmax, times = ncohort) 
+                         tmin <- rep(tmin, times = ncohort)
                          
                          
                          # Assign lifestage raster -----
                          # Each raster cell is assigned to a lifestage
                          # These three rasters assign physiological parameters by cell
-                         ls_ldt <- matrix(stage_ldt[as.vector(lifestage)], 
-                                          nrow = ncohort,
-                                          ncol = length(template), 
-                                          byrow = FALSE)
-                         ls_udt <- matrix(stage_udt[as.vector(lifestage)], 
-                                          nrow = ncohort,
-                                          ncol = length(template), 
-                                          byrow = FALSE)
-                         ls_dd  <- t(sapply(1:ncohort, FUN = function(x) stage_dd[x, ][lifestage[x, ]]))
+                         ls_ldt <- stage_ldt[as.vector(lifestage)] 
+                         ls_udt <- stage_udt[as.vector(lifestage)] 
+                         ls_dd  <- sapply(1:ncohort, FUN = function(x) stage_dd[x, ][lifestage[x]])
                          
                          # Calculate stage-specific degree-days for each cell per day
-                         dd_tmp <- TriDD(tmax, tmin, ls_ldt, ls_udt)
+                         dd_tmp <- as.vector(TriDD(tmax, tmin, ls_ldt, ls_udt))
                          # Accumulate degree days ----
                          dd_accum <- dd_accum + dd_tmp # resets with lifestage change
-                         dd_total <- dd_total + dd_tmp[1, ] # tracks annual accumulation
+                         newdf$dd_total <- dd_total + dd_tmp[1] # tracks annual accumulation
                          
                          # Calculate lifestage progression: Is accumulation > lifestage requirement
                          progress <- dd_accum >= ls_dd
-                         # If reproductive adult stage progressed, that cell has oviposition and generation count increases
-                         numgen <- numgen + (progress == 1 & lifestage %in% which(stgorder %in% c("A", "OA"))) 
-                         fullgen <- fullgen + (progress == 1 & lifestage == (length(stgorder) - 1)) # reaches OW stage
-                         # Reset the DDaccum cells to zero for cells that progressed to next lifestage
-                         lifestage <- lifestage + progress
-                         dd_accum <- dd_accum - (progress * ls_dd)
+                         # DOY of progress tracked
+                         for (ls in 1:length(stgorder)){
+                          newdf[, paste(stgorder[ls], "DOY", sep = "_")] <- Cond(progress == 1 & lifestage == ls, 
+                                                                                         index, 
+                                                                                         newdf[, paste(stgorder[ls], "DOY", sep = "_")])
+                         }
                          
-                         # Reassign cells that progressed past end of stgorder to first non-overwintering stage
-                         lifestage <- Cond(lifestage == (length(stgorder) + 1), 2, lifestage)
+                         
                          
                          # 4. Diapause ----
                          # Take lifestage result from degree-day model and estimate diapause over the year
                          # Need to know photo-sensitive lifestage
+                         
+                         # Only lets individual make diapause decision once, even if in stage for longer time
                          
                          # photoperiod for this day across vector
                          if (model_CDL != 0){
@@ -272,56 +276,87 @@ test <- system.time({
                          }
                          
                          if (model_CDL == 1){
-                           sens_mask <- matrix(Cond(as.vector(lifestage) %in% photo_sens, 1, 0),
-                                               nrow = ncohort,
-                                               ncol = length(template), 
-                                               byrow = FALSE)
+                           sens_mask <- Cond(lifestage %in% photo_sens & diap == -1, 1, 0)
                            prop_diap <- photo < CDL
-                           tmpdiap <- Cond(sens_mask == 1, prop_diap, diap)
-                           diap <- Cond(prop_diap < diap, diap, tmpdiap)
+                           diap <- Cond(sens_mask == 1, rbinom(ncohort, size = 1, prob = prop_diap), diap)
                          }
                          
                          if (model_CDL == 2){
-                           # TODO: wrap inside function for memory efficiency
-                           # add logistic regression variation in CDL response
-                           sens_mask <- matrix(Cond(as.vector(lifestage) %in% photo_sens, 1, 0),
-                                               nrow = ncohort,
-                                               ncol = length(template), 
-                                               byrow= FALSE)
+                           sens_mask <- Cond(lifestage %in% photo_sens & diap == -1, 1, 0)
                            prop_diap <- exp(cdl_b0 + cdl_b1 * photo) /
                              (1 + exp(cdl_b0 + cdl_b1 * photo))
-                           tmpdiap <- Cond(sens_mask == 1, prop_diap, diap)
-                           # need to account for prop_diap declining up until solstice
-                           # only let proportion diapausing increase over season
-                           diap <- Cond(prop_diap < diap, diap, tmpdiap)
+                           diap <- Cond(sens_mask == 1, rbinom(ncohort, size = 1, prob = prop_diap), diap)
                          }
+                         newdf$diapause <- diap
                          
+                         # track individual progress, diapause decisions, and oviposition/mortality
+                         ovip <- Cond(progress == 1 & 
+                                        lifestage %in% which(stgorder %in% c("A", "OA")) &
+                                        diap < 1,
+                                      newdf$indiv,
+                                      0)
+                         lifestage <- Cond(progress == 1 & ovip == 0, lifestage + progress, lifestage)
+                         # Reassign cells that progressed past end of stgorder to first non-overwintering stage
+                         lifestage <- Cond(lifestage == (length(stgorder) + 1), 2, lifestage)
+                         newdf$lifestage <- lifestage
+                         # Inactive if decided to diapause and reaches overwinter stage
+                         newdf$active[which(newdf$lifestage == (length(stgorder)) & newdf$diapause == 1)] <- 0
                          
-                         # weights each cohort now with relpopsize and colSums
+                         dd_accum <- dd_accum - (progress * ls_dd) # should this reset to zero? (assuming no accumulation if progress)
+                         newdf$dd_accum <- dd_accum
                          
-                         if (index %in% seq(start_doy, end_doy, by = 7)){
-                           week <- which(seq(start_doy, end_doy, by = 7) == index)
-                           for (i in 1:length(stgorder)){
-                             ls_array[, week, i] <- colSums(relpopsize * (lifestage == i), na.rm = FALSE)
+                         if(max(ovip) > 0){
+                           newrows <- newdf[which(newdf$indiv %in% ovip), ]
+                           if(nrow(newrows) > 0){
+                             
+                             # TODO:
+                             # Draw degree-day stage requirements here for variation 
+                             
+                             newrows[, paste(stgorder[ls], "DOY", sep = "_")] <- 0
+                             newrows$diapause <- -1
+                             newrows$numgen <- newrows$numgen + 1
+                             newrows$parent <- ovip[which(ovip > 0)]
+                             newrows$lifestage <- which(stgorder == "E")
+                             newrows$dd_accum <- 0
+                             newrows$indiv <- (max(ind_df$indiv) + 1):(max(ind_df$indiv) + nrow(newrows))
+                             newrows$active <- 1
                            }
-                           ls_array[, week, length(stgorder) + 1] <-  colSums(relpopsize * numgen, na.rm = FALSE) # generations by oviposition
-                           ls_array[, week, length(stgorder) + 2] <-  colSums(relpopsize * fullgen, na.rm = FALSE) # max generations potentially completed
-                           ls_array[, week, length(stgorder) + 3] <-  colSums(relpopsize * diap, na.rm = FALSE)
-                           # weather data, doesn't really need to be weekly, but easiest to include in same array
-                           ls_array[, week, length(stgorder) + 4] <- dd_total
-                           ls_array[, week, length(stgorder) + 5] <- last_frost
-                           ls_array[, week, length(stgorder) + 6] <- first_frost
+                           
+                           newdf <- rbind(newdf, newrows)
+                           newdf$active[which(newdf$indiv %in% ovip)] <- 0
                          }
-                       }  # daily loop 
+                         
+                         ind_df <- rbind(olddf, newdf)
+                         
+                         
+                       #   # weights each cohort now with relpopsize and colSums
+                       #   # time interval called week, but could be any number of days for saving results
+                       #   if (index %in% seq(start_doy, end_doy, by = time_interval)){
+                       #     week <- which(seq(start_doy, end_doy, by = time_interval) == index)
+                       #     for (i in 1:length(stgorder)){
+                       #       ls_array[, week, i] <- colSums(relpopsize * (lifestage == i), na.rm = FALSE)
+                       #     }
+                       #     ls_array[, week, length(stgorder) + 1] <-  colSums(relpopsize * numgen, na.rm = FALSE) # generations by oviposition
+                       #     ls_array[, week, length(stgorder) + 2] <-  colSums(relpopsize * fullgen, na.rm = FALSE) # max generations potentially completed
+                       #     ls_array[, week, length(stgorder) + 3] <-  colSums(relpopsize * diap, na.rm = FALSE)
+                       #     # weather data, doesn't really need to be weekly, but easiest to include in same array
+                       #     ls_array[, week, length(stgorder) + 4] <- dd_total
+                       #     ls_array[, week, length(stgorder) + 5] <- last_frost
+                       #     ls_array[, week, length(stgorder) + 6] <- first_frost
+                       #   }
+                         
+                       }  # daily loop
                        
+                       # return(ind_df)
                        
-                       return(ls_array)
-                       
-                     } # close foreach loop
+                     # } # close foreach loop
 }) # system.time
 
 # try to stop cluster, otherwise old rstudio sessions stay on server indefinitely
 stopCluster(cl)
+
+fullgen <- fullgen + (progress == 1 & lifestage == (length(stgorder) - 1)) # reaches OW stage
+
 
 
 # check results by plotting values assigned to raster
