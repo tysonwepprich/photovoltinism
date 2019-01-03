@@ -7,6 +7,16 @@ library(ncdf4)
 source('CDL_funcs.R')
 source('species_params.R')
 
+# download textfile of urls from MACA data server
+# https://climate.northwestknowledge.net/MACA/data_portal.php
+fs <- read.table("/Users/wepprict/Downloads/macav2metdata_urls.txt", header = FALSE)
+fs <- as.data.frame(fs)
+urls <- as.character(fs$V1)
+for (url in urls) {
+  fn <- stringr::str_split_fixed(url, pattern = "/", 8)[, 8]
+  download.file(url, destfile = paste0("data/maca/", fn))
+}
+
 # download files from ENTO
 system("scp -P 732 tyson@ento:/home/macav2metdata/IPSL_rcp85/macav2metdata_tas*_2016_2020_CONUS_daily.nc /home/tyson/REPO/photovoltinism/data/maca")
 
