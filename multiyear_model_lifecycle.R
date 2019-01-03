@@ -1,6 +1,7 @@
 # Speeding up raster-based model with arrays (cohort x pixel)
 # Universal code for 3 biocontrol species
 # Any number of lifestages allowed
+# Multiple years run at once, 5 yr climate forecasts for example
 
 # TODO:
 # 1. Download stable PRISM files to GRUB, many months/years not updated

@@ -12,6 +12,7 @@ weather_path <- "daymet/2009"
 
 class(tile_outlines)
 
+# select which tiles you want by coordinates
 test <- tile_outlines[which(tile_outlines$Ymax < 55 & 
                               tile_outlines$Ymax > 24 & 
                               tile_outlines$XMax > -140), ]
@@ -237,21 +238,3 @@ if(exists("cl")){
   stopCluster(cl)
 }
 
-
-
-e <- extent(-101, -99, 31.5, 32.5)
-rc <- crop(test, e)
-
-
-download_daymet_ncss(location = c(55, -140, 24, -52),
-                     start = 2000,
-                     end = 2000,
-                     frequency = "monthly",
-                     param = "tmin",
-                     path = weather_path,
-                     silent = FALSE)
-
-test <- brick("daymet/tmin_monavg_1980_ncss.nc", varname = "tmin", level = 1)
-ile_outlines$Ymax < 55 & 
-  tile_outlines$Ymax > 24 & 
-  tile_outlines$XMax > -140), ]

@@ -6,13 +6,13 @@ species_params <- function(species, biotype, nsim, model_CDL){
   if (species == "GCA"){
     # life cycle parameters
     # life stage order starting with overwintering stages
-    stgorder   <- c("OA","E","L","P", "A") # reassigned as 1, 2, 3, 4, 5 in model
+    stgorder   <- c("OA","E","L","P", "TA", "A") # reassigned as 1, 2, 3, 4, 5 in model
     # Degree day thresholds
     # need to match length and order of stgorder
     # Could add biotype differences here if needed
-    stage_ldt <- rep(10, 5)
-    stage_udt <- rep(37.8, 5)
-    stage_dd  <- c(167.6, 93.3, 136.4, 137.7, 125.9)
+    stage_ldt <- rep(10, 6)
+    stage_udt <- rep(37.8, 6)
+    stage_dd  <- c(167.6, 93.3, 136.4, 137.7, 125, 10)
     
     # diapause response to photoperiod
     photo_sens <- 5 # integer sensitive stages, can have more than one
