@@ -4,18 +4,28 @@
 
 library(raster)
 library(ncdf4)
+library(RCurl)
 source('CDL_funcs.R')
 source('species_params.R')
 
 # download files from ENTO
 system("scp -P 732 tyson@ento:/home/macav2metdata/IPSL_rcp85/macav2metdata_tas*_2016_2020_CONUS_daily.nc /home/tyson/REPO/photovoltinism/data/maca")
 
+# failures #####
+d = pipe( 'ssh tyson@ento:732 "cat data.txt"' )
+d = pipe( 'ssh -p 732 -l tyson -t -t ento:/home/macav2metdata/IPSL_rcp85/macav2metdata_tasmin_IPSL-CM5A-MR_r1i1p1_rcp85_2046_2050_CONUS_daily.nc')
+
+tmin <- RCurl::scp("tyson@ento:732", 
+                         "/home/macav2metdata/IPSL_rcp85/macav2metdata_tasmin_IPSL-CM5A-MR_r1i1p1_rcp85_2046_2050_CONUS_daily.nc", 
+                         user = "tyson")
+### 
+
 tmin <- brick("data/maca/macav2metdata_tasmin_IPSL-CM5A-MR_r1i1p1_rcp85_2046_2050_CONUS_daily.nc", 
               varname = "air_temperature", lvar = 3, level = 4)
-tmax <- brick("data/maca/macav2metdata_tasmax_IPSL-CM5A-MR_r1i1p1_rcp85_2046_2050_CONUS_daily.nc", 
+tmax <- brick("data/maca/2046/macav2metdata_tasmax_IPSL-CM5A-MR_r1i1p1_rcp85_2046_2050_CONUS_daily.nc", 
               varname = "air_temperature", lvar = 3, level = 4)
 
-nc <- nc_open("data/maca/macav2metdata_tasmin_IPSL-CM5A-MR_r1i1p1_rcp85_2046_2050_CONUS_daily.nc")
+nc <- nc_open("tyson@ento: /home/macav2metdata/IPSL_rcp85/macav2metdata_tasmin_IPSL-CM5A-MR_r1i1p1_rcp85_2046_2050_CONUS_daily.nc")
 v3 <- nc$var[[1]]
 lonsize <- v3$varsize[1]
 latsize <- v3$varsize[2] 
