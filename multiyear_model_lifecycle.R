@@ -8,6 +8,9 @@
 # 2. MACAV2 option for forecasts
 # 3. Redo mapping functions to use new results format
 # 4. Add CDL values to foreach loop with goal to find optimal photoperiod response for each pixel
+# 5. Crop netcdf on command line with CDO: cdo timmean -sellonlatbox,lon1,lon2,lat1,lat2 -seldate,date1,date2 in.nc out.nc
+
+
 
 # 1. Setup -------
 # packages, options, functions loaded
@@ -23,27 +26,35 @@ source('species_params.R')
 
 # 2. User input -----
 # directory with daily tmax and tmin raster files
-weather_path <- "prism"
+# weather_path <- "prism"
 # weather_path <- "data/maca"
+weather_path <- "/home/macav2metdata/IPSL_rcp85/"
 # weather_path <- "/data/PRISM" # PRISM data on grub server (needs to have stable files downloaded)
-download_daily_weather <- 0 # 1 if you need to download PRISM/Daymet data first (20 minutes)
-# weather_data_source <- "macav2" # could also have daymet or macav2
-weather_data_source <- "prism"
+weather_data_source <- "macav2" # could also have daymet or macav2
+# weather_data_source <- "prism"
 
 # use parallel processing
 # splits raster into chunks for running through simulation
 runparallel <- 1 # 1 for yes, 0 for no
-ncores <- 8 # choose number of cores for parallel
+ncores <- 5 # choose number of cores for parallel
+nchunk <- 1 # not used now, for splitting map if too large for memory
 
 # Pest Specific, Multiple Life Stage Phenology Model Parameters:
 # model scope
-yr           <- 2015
+yr           <- 2046 # if multi-year, this is start year of 5-year period
 start_doy    <- 1
 end_doy      <- 365
 region_param <- "NORTHWEST" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
+# if CONUS, wouldn't need to crop PRISM or MACAv2
 species      <- "APHA" # GCA/APHA/DCA
 biotype      <- "S" # TODO: add options for each species, N or S for APHA and GCA
 
+if(weather_data_source == "macav2"){
+  # in Kelvin, adjust thresholds/frost or add 273.15 to giant rasters?
+  weather_files <- list.files(path = weather_path, full.names = TRUE, recursive = TRUE)
+  weather_files <- weather_files[grep(pattern = yr, x = weather_files, fixed = TRUE)]
+  weather_files <- weather_files[grep(pattern = "tas", x = weather_files, fixed = TRUE)]
+}
 
 # introducing cohort variation
 # assign to 1 to match previous model versions
@@ -53,38 +64,11 @@ ncohort <- 7 # number of cohorts to approximate emergence distribution
 # 2 for logistic, 1 for single value CDL, 0 for none
 model_CDL  <- 2 
 
-
-# Weather download ----
-# using ropensci 'prism' package to access webservice, or 'daymetr' package
-# downloads entire CONUS, so files are large
-if (download_daily_weather == 1){
-  if (weather_data_source == "prism"){
-    startdate <- as.Date(start_doy - 1, origin = paste0(yr, "-01-01"))
-    enddate <- as.Date(end_doy - 1, origin = paste0(yr, "-01-01"))
-    
-    # need to set download directory
-    yr_path <- paste(weather_path, yr, sep = "/")
-    
-    if(!exists(yr_path)){
-      dir.create(yr_path)
-    }
-    
-    # options(prism.path = paste("prismDL", yr, sep = "/"))
-    options(prism.path = yr_path)
-    
-    get_prism_dailys("tmin", minDate = startdate, 
-                     maxDate = enddate, keepZip = FALSE)
-    get_prism_dailys("tmax", minDate = startdate, 
-                     maxDate = enddate, keepZip = FALSE)
-  }
-}
-
-
-
 # Derived parameters -----
 REGION <- assign_extent(region_param = region_param)
 params <- species_params(species, biotype, ncohort, model_CDL)
 
+# PRISM data is in one file per day, one directory per year
 if (weather_data_source == "prism"){
   yr_path <- paste(weather_path, yr, sep = "/")
   # If GDD not pre-calculated, load list of PRISM files
@@ -103,17 +87,29 @@ if (weather_data_source == "prism"){
   geo_template[!is.na(geo_template)] <- 0
 }
 
+# MACAv2 files have 5 years in one netcdf file
 if (weather_data_source == "macav2"){
-  yr_path <- paste(weather_path, yr, sep = "/")
+  # yr_path <- paste(weather_path, yr, sep = "/")
+  # tmin <- brick(paste(yr_path, list.files(yr_path)[grep(x = list.files(yr_path), pattern = "tasmin", fixed = TRUE)], sep = "/"), 
+  #               varname = "air_temperature", lvar = 3, level = 4)
+  # tmax <- brick(paste(yr_path, list.files(yr_path)[grep(x = list.files(yr_path), pattern = "tasmax", fixed = TRUE)], sep = "/"),
+  #               varname = "air_temperature", lvar = 3, level = 4)
   
-  tmin <- brick(paste(yr_path, list.files(yr_path)[grep(x = list.files(yr_path), pattern = "tasmin", fixed = TRUE)], sep = "/"), 
+  tmax <- brick(weather_files[grep(x = weather_files, pattern = "tasmax", fixed = TRUE)],
                 varname = "air_temperature", lvar = 3, level = 4)
-  tmax <- brick(paste(yr_path, list.files(yr_path)[grep(x = list.files(yr_path), pattern = "tasmax", fixed = TRUE)], sep = "/"),
+  tmin <- brick(weather_files[grep(x = weather_files, pattern = "tasmin", fixed = TRUE)],
                 varname = "air_temperature", lvar = 3, level = 4)
-  tminfiles <- shift(tmin[[which(lubridate::year(as.Date(getZ(tmin))) == yr)]], x = -360)
-  tmaxfiles <- shift(tmax[[which(lubridate::year(as.Date(getZ(tmax))) == yr)]], x = -360)
   
-  geo_template <- crop(tminfiles[[1]], REGION)
+  macafile <- basename(tmax@file@name)
+  yrs <- gregexpr(pattern = "[0-9]{4}", text = macafile)
+  yr1 <- as.numeric(substr(macafile, start = yrs[[1]][1], stop = yrs[[1]][1] + 3))
+  yr2 <- as.numeric(substr(macafile, start = yrs[[1]][2], stop = yrs[[1]][2] + 3))
+  yr <- yr1:yr2
+  
+  tmin <- shift(tmin, x = -360)
+  tmax <- shift(tmax, x = -360)
+  
+  geo_template <- crop(tmin[[1]], REGION)
   # template <- crop(aggregate(raster(files[1]), fact = 2), REGION)
   geo_template[!is.na(geo_template)] <- 0
 }
@@ -140,24 +136,50 @@ chunk2 <- function(x,n){
     list(x)
   }
 }
-chunk_list <- chunk2(getValues(geo_template), ncores)
-
+chunk_list <- chunk2(getValues(geo_template), nchunk) # replace with ncores if using
+chunk <- 1
 
 # function needed to combine array results with foreach
 acomb4 <- function(...) abind::abind(..., along = 4)
 acomb1 <- function(...) abind::abind(..., along = 1)
 
 
+# # FOR PRISM
+# # Crop rasters and convert them to a matrix, using multiple cores 
+# # .inorder must be set to TRUE so that output files are in correct order!
+# tmax_list <- foreach(t=tmaxfiles, .packages = "raster", .inorder = TRUE) %dopar% {
+#   m <- as.matrix(crop(raster(t),template))
+# }
+# 
+# tmin_list <- foreach(t=tminfiles, .packages = "raster", .inorder = TRUE) %dopar% {
+#   m <- as.matrix(crop(raster(t),template))
+# }
+
+
+
+
 # 3. Run lifestage model -----
 
 test <- system.time({
   
-  outlist <- foreach(chunk = 1:ncores,
-                     .packages = "raster",
-                     .inorder = TRUE,
-                     .combine = 'acomb1',
+  # parallel by yr if MACA 5-year dataset
+  outlist <- foreach(numyrs = 1:length(yr),
+                     .packages = c("raster", "lubridate"), 
+                     .inorder = FALSE,
+                     .combine = 'acomb4',
                      .multicombine = TRUE) %dopar%{
+                       # foreach(chunk = 1:nchunk,
+                       #         .packages = c("raster", "lubridate"),
+                       #         .inorder = TRUE,
+                       #         .combine = 'acomb1',
+                       #         .multicombine = TRUE) %dopar%{
                        
+                       modyear <- yr[numyrs]
+                       
+                       if (weather_data_source == "macav2"){
+                         tminfiles <- tmin[[which(lubridate::year(as.Date(getZ(tmin))) == modyear)]]
+                         tmaxfiles <- tmax[[which(lubridate::year(as.Date(getZ(tmax))) == modyear)]]
+                       }
                        
                        template <- chunk_list[[chunk]]
                        
@@ -167,7 +189,7 @@ test <- system.time({
                                               byrow=TRUE)
                        
                        # latitudes for photoperiod model
-                       lats <- chunk2(getValues(init(geo_template, 'y')), ncores)[[chunk]]
+                       lats <- chunk2(getValues(init(geo_template, 'y')), nchunk)[[chunk]]
                        
                        
                        # create array to hold results
@@ -207,12 +229,12 @@ test <- system.time({
                          doy <- start_doy + index - 1
                          # # get daily temperature, crop to REGION
                          if (weather_data_source == "prism"){
-                           tmin <- chunk2(getValues(crop(raster(tminfiles[index]), geo_template)), ncores)[[chunk]]
-                           tmax <- chunk2(getValues(crop(raster(tmaxfiles[index]), geo_template)), ncores)[[chunk]]
+                           tmin <- chunk2(getValues(crop(raster(tminfiles[index]), geo_template)), nchunk)[[chunk]]
+                           tmax <- chunk2(getValues(crop(raster(tmaxfiles[index]), geo_template)), nchunk)[[chunk]]
                          }
                          if (weather_data_source == "macav2"){
-                           tmin <- chunk2(getValues(crop(tminfiles[[index]], geo_template)), ncores)[[chunk]]
-                           tmax <- chunk2(getValues(crop(tmaxfiles[[index]], geo_template)), ncores)[[chunk]]
+                           tmin <- -273.15 + chunk2(getValues(crop(tminfiles[[index]], geo_template)), nchunk)[[chunk]]
+                           tmax <- -273.15 + chunk2(getValues(crop(tmaxfiles[[index]], geo_template)), nchunk)[[chunk]]
                          }
                          # frost boundaries to growing season
                          if(doy <= 182){
@@ -325,12 +347,13 @@ test <- system.time({
 stopCluster(cl)
 
 
+
 # check results by plotting values assigned to raster
 # array dimensions: [pixel, week, results]
-plot(setValues(geo_template, outlist[, 53, 6]))
+plot(setValues(geo_template, outlist[, 53, 10, 5]))
 
 # plot time series of lifestage at a single pixel for weighted cohorts
 plot(outlist[50000, , 1])
 
-
+saveRDS(outlist, "test_MACA_output.rds")
 
