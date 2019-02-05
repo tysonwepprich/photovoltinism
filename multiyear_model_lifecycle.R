@@ -23,21 +23,21 @@ source('species_params.R')
 
 # 2. User input -----
 # directory with daily tmax and tmin raster files
-weather_path <- "prism"
-# weather_path <- "data/maca"
+# weather_path <- "prism"
+weather_path <- "data/maca"
 # weather_path <- "/data/PRISM" # PRISM data on grub server (needs to have stable files downloaded)
 download_daily_weather <- 0 # 1 if you need to download PRISM/Daymet data first (20 minutes)
-# weather_data_source <- "macav2" # could also have daymet or macav2
-weather_data_source <- "prism"
+weather_data_source <- "macav2" # could also have daymet or macav2
+# weather_data_source <- "prism"
 
 # use parallel processing
 # splits raster into chunks for running through simulation
 runparallel <- 1 # 1 for yes, 0 for no
-ncores <- 8 # choose number of cores for parallel
+ncores <- 4 # choose number of cores for parallel
 
 # Pest Specific, Multiple Life Stage Phenology Model Parameters:
 # model scope
-yr           <- 2015
+# yr           <- 2015
 start_doy    <- 1
 end_doy      <- 365
 region_param <- "NORTHWEST" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
