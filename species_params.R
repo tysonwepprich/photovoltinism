@@ -1,6 +1,6 @@
 # biocontrol species parameters
 # to source for model_lifecycle.R
-species_params <- function(species, biotype, nsim, model_CDL){
+species_params <- function(mod_type, species, biotype, nsim, model_CDL, dd_sd){
   
   # Galerucella calmariensis ----
   if (species == "GCA"){
@@ -145,29 +145,62 @@ species_params <- function(species, biotype, nsim, model_CDL){
     # TODO: empirical distribution from data
   } # end APHA 
   
-  # for any species
-  # output parameter file with
-  # substages and photoperiod response
-  inputdist <- data.frame(x = xdist, y = ydist) %>% 
-    arrange(x) %>% 
-    mutate(CDF = cumsum(y/sum(y)))
-  substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
   
-  # parameters of required degree-days and coefficients of photoperiod response model
-  if (nsim == 1){
-    ddpar <- matrix(stage_dd, nrow = 1, byrow = TRUE)
-  }else{
-    ddpar <- cbind(substages$means, matrix(rep(stage_dd[-1], nrow(substages)), nrow = nrow(substages), byrow = TRUE))
+  if (mod_type == "cohort"){
+    # for any species
+    # output parameter file with
+    # substages and photoperiod response
+    inputdist <- data.frame(x = xdist, y = ydist) %>% 
+      arrange(x) %>% 
+      mutate(CDF = cumsum(y/sum(y)))
+    substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
+    
+    # parameters of required degree-days and coefficients of photoperiod response model
+    if (nsim == 1){
+      ddpar <- matrix(stage_dd, nrow = 1, byrow = TRUE)
+    }else{
+      ddpar <- cbind(substages$means, matrix(rep(stage_dd[-1], nrow(substages)), nrow = nrow(substages), byrow = TRUE))
+    }
+    
+    params <- list(
+      stgorder = stgorder,
+      relpopsize = substages$weights,
+      stage_dd = ddpar,
+      stage_ldt = stage_ldt,
+      stage_udt = stage_udt,
+      photo_sens = photo_sens,
+      CDL = coefs)
+    
+    return(params)
   }
   
-  params <- list(
-    stgorder = stgorder,
-    relpopsize = substages$weights,
-    stage_dd = ddpar,
-    stage_ldt = stage_ldt,
-    stage_udt = stage_udt,
-    photo_sens = photo_sens,
-    CDL = coefs)
   
-  return(params)
+  if(mod_type == "ibm"){
+    
+    # for any species
+    # output parameter file with
+    emerg <- base::sample(xdist, size = nsim, prob = ydist)
+    
+    # parameters of required degree-days and coefficients of photoperiod response model
+    if (nsim == 1){
+      ddpar <- matrix(stage_dd, nrow = 1, byrow = TRUE)
+    }else{
+      ddpar <- cbind(emerg, matrix(rep(stage_dd[-1], nsim), nrow = nsim, byrow = TRUE))
+    }
+    
+    if(dd_sd > 0){
+      ddpar[, 2:ncol(ddpar)] <- apply(ddpar[, 2:ncol(ddpar)], MARGIN = 2, FUN = function(x){rnorm(length(x), mean = mean(x), sd = dd_sd * mean(x) / 100)})
+    }
+    
+    params <- list(
+      stgorder = stgorder,
+      stage_dd = ddpar,
+      stage_ldt = stage_ldt,
+      stage_udt = stage_udt,
+      photo_sens = photo_sens,
+      CDL = coefs)
+    
+    return(params)
+    
+  }
 }

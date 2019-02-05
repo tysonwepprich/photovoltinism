@@ -41,7 +41,7 @@ nchunk <- 1 # not used now, for splitting map if too large for memory
 
 # Pest Specific, Multiple Life Stage Phenology Model Parameters:
 # model scope
-yr           <- 2046 # if multi-year, this is start year of 5-year period
+yr           <- 2016 # if multi-year, this is start year of 5-year period
 start_doy    <- 1
 end_doy      <- 365
 region_param <- "NORTHWEST" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
@@ -201,7 +201,7 @@ test <- system.time({
                        
                        # Varying traits from parameter file
                        stgorder   <- params$stgorder
-                       relpopsize <- params$relpopsize
+                       relpopsize <- params$relpopsize / sum(params$relpopsize) # so that sum = 1
                        stage_dd   <- params$stage_dd
                        stage_ldt  <- params$stage_ldt
                        stage_udt  <- params$stage_udt
@@ -292,6 +292,11 @@ test <- system.time({
                          # photoperiod for this day across vector
                          if (model_CDL != 0){
                            photo <- photoperiod(lats, doy, p = 1.5)
+                           photo_mat <- matrix(photo,
+                                               nrow = ncohort,
+                                               ncol = length(template),
+                                               byrow=TRUE)
+                           
                          }
                          
                          if (model_CDL == 1){
@@ -310,9 +315,9 @@ test <- system.time({
                            sens_mask <- matrix(Cond(as.vector(lifestage) %in% photo_sens, 1, 0),
                                                nrow = ncohort,
                                                ncol = length(template), 
-                                               byrow= FALSE)
-                           prop_diap <- exp(cdl_b0 + cdl_b1 * photo) /
-                             (1 + exp(cdl_b0 + cdl_b1 * photo))
+                                               byrow= FALSE) # because as.vector goes by column
+                           prop_diap <- exp(cdl_b0 + cdl_b1 * photo_mat) /
+                             (1 + exp(cdl_b0 + cdl_b1 * photo_mat))
                            tmpdiap <- Cond(sens_mask == 1, prop_diap, diap)
                            # need to account for prop_diap declining up until solstice
                            # only let proportion diapausing increase over season
@@ -350,10 +355,52 @@ stopCluster(cl)
 
 # check results by plotting values assigned to raster
 # array dimensions: [pixel, week, results]
-plot(setValues(geo_template, outlist[, 53, 10, 5]))
+plot(setValues(geo_template, outlist[, 50, 9, 1]))
 
 # plot time series of lifestage at a single pixel for weighted cohorts
 plot(outlist[50000, , 1])
 
-saveRDS(outlist, "test_MACA_output.rds")
+saveRDS(outlist, "test_MACA_output_2016.rds")
 
+# trying out voltinism quantification
+
+da <- readRDS("test_MACA_output.rds")
+
+tsdat <- da[103381, , , 1]
+tsdat <- data.frame(tsdat)
+names(tsdat) <- c(params$stgorder, "attempt", "compl", "diap", "gdd", "lf", "ff")
+df <- tsdat %>% 
+  dplyr::select(compl, diap) %>% 
+  mutate(week = 1:nrow(.)) %>% 
+  # group_by(week) %>% 
+  arrange(week) %>% 
+  # mutate(compl = compl / sum(params$relpopsize),
+  #        diap = diap / sum(params$relpopsize)) %>% 
+  mutate(diapnewgen = cumsum(c(0, diff(compl)) * (1-diap))) %>% 
+  tidyr::gather(key = "var", value = "val", -week)
+
+
+
+
+ggplot(df, aes(x = week, y = val, group = var, color = var)) + 
+  geom_line() +
+  facet_wrap(~var, scales = "free_y", ncol = 1)
+
+
+
+br <- brick(replicate(5, geo_template))
+
+
+poten <- setValues(br, da[, , 7, 1])
+diap <- setValues(br, da[, , 8, 1])
+VoltDiap <- function(x, y){
+  ss <- (subset(x, 2:nlayers(x)) - subset(x, 1:(nlayers(x)-1))) * (1 - y)[[2:nlayers(x)]]
+  tmp <- calc(ss, fun = cumsum)
+  return(tmp)
+}
+voltdiap <- VoltDiap(poten, diap)
+plot(voltdiap[[52]])
+# plot(setValues(geo_template, voltdiap[[52]]))
+plot(poten[[53]])
+plot(poten[[53]] - voltdiap[[52]])
+which.max(poten[[53]])
