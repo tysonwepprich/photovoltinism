@@ -44,6 +44,9 @@ AvgDD=function(tmax, tmin, LDT, UDT){
 #### Single triangle with upper threshold (Sevachurian et al. 1977) - also a good substitution for 
 #  single sine method
 TriDD=function(tmax, tmin, LDT, UDT){
+  # if tmax == tmin, gives NaN
+  tmax <- Cond(tmax == tmin, tmax + 0.01, tmax)
+  
   Tmp1=6*((tmax-LDT)*(tmax-LDT))/(tmax-tmin)
   Tmp2=6*((tmax-UDT)*(tmax-UDT))/(tmax-tmin)
   Cond(tmax < LDT,0,

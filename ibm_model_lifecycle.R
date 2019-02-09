@@ -20,7 +20,7 @@ source('species_params.R')
 # directory with daily tmax and tmin raster files
 # weather_path <- "prism"
 # weather_path <- "data/maca"
-weather_path <- "/data/PRISM" # PRISM data on grub server (needs to have stable files downloaded)
+weather_path <- "prism" # PRISM data on grub server (needs to have stable files downloaded)
 download_daily_weather <- 0 # 1 if you need to download PRISM/Daymet data first (20 minutes)
 # weather_data_source <- "macav2" # could also have daymet or macav2
 weather_data_source <- "prism"
@@ -46,7 +46,7 @@ ncohort <- 10 # number of cohorts to approximate emergence distribution
 
 # photoperiod decision inclusion
 # 2 for logistic, 1 for single value CDL, 0 for none
-model_CDL  <- 2 
+model_CDL  <- 0
 
 
 # Weather download ----
@@ -86,11 +86,11 @@ if (weather_data_source == "prism"){
   # Add option for GDD pre-calculated (if all stages have same traits)
   # send file names to for loop
   pattern = paste("(PRISM_tmin_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
-  tminfiles <- list.files(path = yr_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = FALSE)
+  tminfiles <- list.files(path = yr_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
   tminfiles <- ExtractBestPRISM(tminfiles, yr, leap = "keep")[start_doy:end_doy]
   
   pattern = paste("(PRISM_tmax_)(.*)(_bil.bil)$", sep="") # changed this to min, mean not on GRUB?
-  tmaxfiles <- list.files(path = yr_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = FALSE)
+  tmaxfiles <- list.files(path = yr_path, pattern=pattern, all.files=FALSE, full.names=TRUE, recursive = TRUE)
   tmaxfiles <- ExtractBestPRISM(tmaxfiles, yr, leap = "keep")[start_doy:end_doy]
   
   geo_template <- crop(raster(tminfiles[1]), REGION)
@@ -312,7 +312,7 @@ test <- system.time({
                              # TODO:
                              # Draw degree-day stage requirements here for variation 
                              
-                             newrows[, paste(stgorder[ls], "DOY", sep = "_")] <- 0
+                             newrows[, paste(stgorder, "DOY", sep = "_")] <- 0
                              newrows$diapause <- -1
                              newrows$numgen <- newrows$numgen + 1
                              newrows$parent <- ovip[which(ovip > 0)]
