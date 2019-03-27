@@ -169,7 +169,7 @@ test <- system.time({
                      .combine = 'acomb4',
                      .multicombine = TRUE) %dopar%{
                        # foreach(chunk = 1:nchunk,
-                       #         .packages = c("raster", "lubridate"),
+                       # .packages = c("raster", "lubridate"),
                        #         .inorder = TRUE,
                        #         .combine = 'acomb1',
                        #         .multicombine = TRUE) %dopar%{
