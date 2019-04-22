@@ -63,7 +63,33 @@ plt <- ggplot(dat, aes(x = photoperiod, y = perc_repro)) +
 plt
 
 
+# group early/late petris together
+dat <- read.csv("C:/Users/wepprict/Desktop/galerucella_chamber_diapause_2018.csv", header = TRUE)
 
+dat <- dat %>% 
+  filter(starting_lifestage == "egg") %>% 
+  group_by(chamber, temperature, photoperiod, population) %>% 
+  summarise(total = sum(repro_female, feeder, diapause),
+         perc_repro = 1 - sum(diapause)/total,
+         rowid = paste(population[1], chamber[1], sep = "_"))  %>%
+  droplevels.data.frame()
+# arrange(population, chamber, starting_lifestage, emerg_group) %>% 
+# filter(population == "S") %>% 
+# data.frame()
+
+levels(dat$population) <- c("Bellingham, WA", "Baskett-Slough, OR", "Ft. Drum, NY", "Montesano, WA",
+                            "McArthur, CA", "Palermo, CA", "Sutherlin, OR", "Coeburn, VA", "West Point, NY",
+                            "Yakima, WA")
+
+plt <- ggplot(dat, aes(x = photoperiod, y = perc_repro)) +
+  geom_point(aes(shape = as.factor(temperature)), size = 3, alpha = .5) +
+  scale_color_discrete(name = "Petri dish") +
+  scale_shape_discrete(name = "Temperature") +
+  geom_line(data = newdat, aes(x = photoperiod, y = pred)) +
+  xlab("Daylength in chamber") +
+  ylab("Percent reproductive") +
+  facet_wrap(~population, ncol = 3)
+plt
 
 
 # what about combining with Fritzi previous chamber experiments?

@@ -27,7 +27,7 @@ region_param <- "NORTHWEST" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
 species      <- "APHA" # GCA/APHA/DCA
 biotype      <- "S" # TODO: add options for each species, N or S for APHA and GCA
 
-nsim <- 100
+nsim <- 1000
 # lambda <- 1.1
 lat <- 43.39
 lon <- -123.35
@@ -62,7 +62,7 @@ model_CDL  <- 2
 
 
 # Derived parameters -----
-params <- species_params(mod_type = "ibm", species, biotype, nsim, model_CDL, dd_sd = 5)
+params <- species_params(mod_type = "ibm", species, biotype, nsim, model_CDL, dd_sd = 0)
 
 ldt <- params$stage_ldt[1]
 udt <- params$stage_udt[1]
@@ -156,7 +156,7 @@ cdls <- expand.grid(cdl = seq(min(gdd_all$daylength), 18, length.out = 20),
     startyear <- min(gdd_all$year)
     endyear <- max(gdd_all$year)
 
-ncores <- 2
+ncores <- 4
 cl <- makePSOCKcluster(ncores)
 registerDoParallel(cl)
 
@@ -472,13 +472,28 @@ coh_volt <- cohplot %>%
 # but what does it really mean? 
 # is this just weighted voltinism? Why does it work for the cohort model?
 coh_volt <- coh_volt %>% ungroup() %>%  mutate(res$voltinism)
-plot(coh_volt$`res$voltinism`, coh_volt$d98)
+plot(coh_volt$`res$voltinism`, coh_volt$d95)
 abline(0, 1)
 
-ind_diap <- res %>% 
-  mutate(comp = sum(c(comp_1, comp_2, comp_3, comp_4), na.rm = TRUE),
-         diap = comp / (comp + lost))
 
+cohdf <- bind_rows(cohlist) %>% filter(week == 53) %>% 
+  rename(SiteID = ID, Year = year) %>% 
+  mutate(Year = as.numeric(Year))
+
+ind_diap <- res %>% 
+  rowwise() %>% 
+  mutate(ind_comp = sum(c(comp_1, comp_2, comp_3, comp_4), na.rm = TRUE),
+         ind_diap = ind_comp / (ind_comp + lost)) %>% 
+  left_join(cohdf)
+
+plot(ind_diap$voltinism, ind_diap$completed)
+abline(0, 1)
+plot(ind_diap$ind_diap, ind_diap$diap)
+abline(0, 1)
+
+
+# Optimal CDL plots
+###############
 
 library(ggplot2)
 library(viridis)
