@@ -9,6 +9,10 @@
 # 3. Redo mapping functions to use new results format
 # 4. Add CDL values to foreach loop with goal to find optimal photoperiod response for each pixel
 
+# Run Time
+# 40 minutes for 5 years of Northwest region with 7 cohorts, weekly output save 2.3 GB
+
+
 # 1. Setup -------
 # packages, options, functions loaded
 # TODO: find ways to take out dplyr, purrr, mixsmsn functions?
@@ -23,24 +27,29 @@ source('species_params.R')
 
 # 2. User input -----
 # directory with daily tmax and tmin raster files
-weather_path <- "prism"
-# weather_path <- "data/maca"
+# weather_path <- "prism"
+weather_path <- "data/maca"
 # weather_path <- "/data/PRISM" # PRISM data on grub server (needs to have stable files downloaded)
-download_daily_weather <- 0 # 1 if you need to download PRISM/Daymet data first (20 minutes)
-# weather_data_source <- "macav2" # could also have daymet or macav2
-weather_data_source <- "prism"
+weather_data_source <- "macav2" # could also have daymet or macav2
+# weather_data_source <- "prism"
+
+if(weather_data_source == "macav2"){
+  # in Kelvin, adjust thresholds/frost or add 273.15 to giant rasters?
+  weather_files <- list.files(path = weather_path, full.names = TRUE, recursive = TRUE)
+}
 
 # use parallel processing
 # splits raster into chunks for running through simulation
 runparallel <- 1 # 1 for yes, 0 for no
-ncores <- 8 # choose number of cores for parallel
+ncores <- 10 # choose number of cores for parallel
 
 # Pest Specific, Multiple Life Stage Phenology Model Parameters:
 # model scope
-yr           <- 2015
+yr           <- 2016 # if multi-year, will be replaced
 start_doy    <- 1
 end_doy      <- 365
-region_param <- "NORTHWEST" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
+region_param <- "NW_SMALL" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
+# if CONUS, wouldn't need to crop PRISM or MACAv2
 species      <- "APHA" # GCA/APHA/DCA
 biotype      <- "S" # TODO: add options for each species, N or S for APHA and GCA
 
@@ -53,38 +62,11 @@ ncohort <- 7 # number of cohorts to approximate emergence distribution
 # 2 for logistic, 1 for single value CDL, 0 for none
 model_CDL  <- 2 
 
-
-# Weather download ----
-# using ropensci 'prism' package to access webservice, or 'daymetr' package
-# downloads entire CONUS, so files are large
-if (download_daily_weather == 1){
-  if (weather_data_source == "prism"){
-    startdate <- as.Date(start_doy - 1, origin = paste0(yr, "-01-01"))
-    enddate <- as.Date(end_doy - 1, origin = paste0(yr, "-01-01"))
-    
-    # need to set download directory
-    yr_path <- paste(weather_path, yr, sep = "/")
-    
-    if(!exists(yr_path)){
-      dir.create(yr_path)
-    }
-    
-    # options(prism.path = paste("prismDL", yr, sep = "/"))
-    options(prism.path = yr_path)
-    
-    get_prism_dailys("tmin", minDate = startdate, 
-                     maxDate = enddate, keepZip = FALSE)
-    get_prism_dailys("tmax", minDate = startdate, 
-                     maxDate = enddate, keepZip = FALSE)
-  }
-}
-
-
-
 # Derived parameters -----
 REGION <- assign_extent(region_param = region_param)
 params <- species_params(species, biotype, ncohort, model_CDL)
 
+# PRISM data is in one file per day, one directory per year
 if (weather_data_source == "prism"){
   yr_path <- paste(weather_path, yr, sep = "/")
   # If GDD not pre-calculated, load list of PRISM files
@@ -103,17 +85,24 @@ if (weather_data_source == "prism"){
   geo_template[!is.na(geo_template)] <- 0
 }
 
+# MACAv2 files have 5 years in one netcdf file
 if (weather_data_source == "macav2"){
   yr_path <- paste(weather_path, yr, sep = "/")
-  
-  tmin <- brick(paste(yr_path, list.files(yr_path)[grep(x = list.files(yr_path), pattern = "tasmin", fixed = TRUE)], sep = "/"), 
+  tminbrick <- brick(paste(yr_path, list.files(yr_path)[grep(x = list.files(yr_path), pattern = "tasmin", fixed = TRUE)], sep = "/"), 
                 varname = "air_temperature", lvar = 3, level = 4)
-  tmax <- brick(paste(yr_path, list.files(yr_path)[grep(x = list.files(yr_path), pattern = "tasmax", fixed = TRUE)], sep = "/"),
+  tmaxbrick <- brick(paste(yr_path, list.files(yr_path)[grep(x = list.files(yr_path), pattern = "tasmax", fixed = TRUE)], sep = "/"),
                 varname = "air_temperature", lvar = 3, level = 4)
-  tminfiles <- shift(tmin[[which(lubridate::year(as.Date(getZ(tmin))) == yr)]], x = -360)
-  tmaxfiles <- shift(tmax[[which(lubridate::year(as.Date(getZ(tmax))) == yr)]], x = -360)
   
-  geo_template <- crop(tminfiles[[1]], REGION)
+  macafile <- basename(tmaxbrick@file@name)
+  yrs <- gregexpr(pattern = "[0-9]{4}", text = macafile)
+  yr1 <- as.numeric(substr(macafile, start = yrs[[1]][1], stop = yrs[[1]][1] + 3))
+  yr2 <- as.numeric(substr(macafile, start = yrs[[1]][2], stop = yrs[[1]][2] + 3))
+  yr <- yr1:yr2
+  
+  tminbrick <- shift(tminbrick, x = -360)
+  tmaxbrick <- shift(tmaxbrick, x = -360)
+  
+  geo_template <- crop(tminbrick[[1]], REGION)
   # template <- crop(aggregate(raster(files[1]), fact = 2), REGION)
   geo_template[!is.na(geo_template)] <- 0
 }
@@ -152,13 +141,25 @@ acomb1 <- function(...) abind::abind(..., along = 1)
 
 test <- system.time({
   
-  outlist <- foreach(chunk = 1:ncores,
-                     .packages = "raster",
+  # parallel by yr if MACA 5-year dataset
+  outlist <- foreach(y = 1:length(yr),
+                     .packages = c("raster", "lubridate"), 
+                     .inorder = TRUE,
+                     .combine = 'acomb4',
+                     .multicombine = TRUE) %:%
+    foreach(chunk = 1:ncores,
+                     .packages = c("raster", "lubridate"),
                      .inorder = TRUE,
                      .combine = 'acomb1',
                      .multicombine = TRUE) %dopar%{
                        
+                       modyear <- yr[y]
                        
+                       if (weather_data_source == "macav2"){
+                         tminfiles <- tminbrick[[which(lubridate::year(as.Date(getZ(tminbrick))) == modyear)]]
+                         tmaxfiles <- tmaxbrick[[which(lubridate::year(as.Date(getZ(tmaxbrick))) == modyear)]]
+                       }
+
                        template <- chunk_list[[chunk]]
                        
                        template_mat <- matrix(template, 
@@ -211,8 +212,8 @@ test <- system.time({
                            tmax <- chunk2(getValues(crop(raster(tmaxfiles[index]), geo_template)), ncores)[[chunk]]
                          }
                          if (weather_data_source == "macav2"){
-                           tmin <- chunk2(getValues(crop(tminfiles[[index]], geo_template)), ncores)[[chunk]]
-                           tmax <- chunk2(getValues(crop(tmaxfiles[[index]], geo_template)), ncores)[[chunk]]
+                           tmin <- -273.15 + chunk2(getValues(crop(tminfiles[[index]], geo_template)), ncores)[[chunk]]
+                           tmax <- -273.15 + chunk2(getValues(crop(tmaxfiles[[index]], geo_template)), ncores)[[chunk]]
                          }
                          # frost boundaries to growing season
                          if(doy <= 182){
@@ -237,7 +238,7 @@ test <- system.time({
                          # These three rasters assign physiological parameters by cell
                          ls_ldt <- matrix(stage_ldt[as.vector(lifestage)], 
                                           nrow = ncohort,
-                                          ncol = length(template), 
+                                          ncol = length(template) , 
                                           byrow = FALSE)
                          ls_udt <- matrix(stage_udt[as.vector(lifestage)], 
                                           nrow = ncohort,
@@ -324,13 +325,33 @@ test <- system.time({
 # try to stop cluster, otherwise old rstudio sessions stay on server indefinitely
 stopCluster(cl)
 
+# 
+# # check results by plotting values assigned to raster
+# # array dimensions: [pixel, week, results]
+plot(setValues(geo_template, outlist[, 53, 5, 1]))
+# 
+# # plot time series of lifestage at a single pixel for weighted cohorts
+# plot(outlist[50000, , 1])
+# 
+# 
 
-# check results by plotting values assigned to raster
-# array dimensions: [pixel, week, results]
-plot(setValues(geo_template, outlist[, 53, 6]))
 
-# plot time series of lifestage at a single pixel for weighted cohorts
-plot(outlist[50000, , 1])
+sites <- data.frame(ID = c("Corvallis, OR", "JB Lewis-McChord, WA", 
+                            "Yakima Training Center, WA", "Camp Rilea, OR",
+                            "S Portland, OR",
+                           "Sutherlin, OR", "Bellingham, WA"),
+                    x = c(-123.263, -122.53, -120.461073,
+                          -123.934759, -122.658887,
+                          -123.315854, -122.479482),
+                    y = c(44.564, 47.112, 46.680138,
+                          46.122867, 45.470532,
+                          43.387721, 48.756105))
+coordinates(sites) <- ~x+y
 
+# get cells from geo_template to extract
+# We store the cell number
+id.cell <- extract(geo_template, sites, cellnumbers=TRUE)[, 1]
 
-
+# site results from giant array
+site_array <- outlist[id.cell,,,]
+saveRDS(site_array, "site_array_apha.rds")
