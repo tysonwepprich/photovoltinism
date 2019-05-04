@@ -153,7 +153,7 @@ species_params <- function(mod_type, species, biotype, nsim, model_CDL, dd_sd){
     inputdist <- data.frame(x = xdist, y = ydist) %>% 
       arrange(x) %>% 
       mutate(CDF = cumsum(y/sum(y)))
-    substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
+    substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .999)
     
     # parameters of required degree-days and coefficients of photoperiod response model
     if (nsim == 1){
@@ -179,7 +179,7 @@ species_params <- function(mod_type, species, biotype, nsim, model_CDL, dd_sd){
     
     # for any species
     # output parameter file with
-    emerg <- base::sample(xdist, size = nsim, prob = ydist)
+    emerg <- base::sample(xdist, size = nsim, prob = ydist, replace = TRUE)
     
     # parameters of required degree-days and coefficients of photoperiod response model
     if (nsim == 1){

@@ -21,19 +21,19 @@ source('CDL_funcs.R')
 source('species_params.R')
 
 # 2. User input -----
-dat <- readRDS("test_MACA_output_2016.rds")
+dat <- readRDS("APHA_output_2016to2018_NWSMALL_N.rds")
 yr <- 2016
 
-weather_path <- "/home/macav2metdata/IPSL_rcp85/"
-# weather_path <- "/data/PRISM" # PRISM data on grub server (needs to have stable files downloaded)
-weather_data_source <- "macav2" # could also have daymet or macav2
-# weather_data_source <- "prism"
+# weather_path <- "/home/macav2metdata/IPSL_rcp85/"
+weather_path <- "data/PRISM" # PRISM data on grub server (needs to have stable files downloaded)
+# weather_data_source <- "macav2" # could also have daymet or macav2
+weather_data_source <- "prism"
 
 
-region_param <- "NORTHWEST" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
+region_param <- "NW_SMALL" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
 # if CONUS, wouldn't need to crop PRISM or MACAv2
 species      <- "APHA" # GCA/APHA/DCA
-biotype      <- "S" # TODO: add options for each species, N or S for APHA and GCA
+biotype      <- "N" # TODO: add options for each species, N or S for APHA and GCA
 
 if(weather_data_source == "macav2"){
   # in Kelvin, adjust thresholds/frost or add 273.15 to giant rasters?
@@ -110,25 +110,26 @@ reg.points = fortify(region, region="name_en")
 reg.df = left_join(reg.points, region@data, by = c("id" = "name_en"))
 
 
-# summarise 5 years of MACA simulations
-br <- brick(replicate(5, template))
+# summarise years of MACA simulations
+br <- brick(replicate(3, template))
 potential <- attempt <- mismatch <- diapause <- gdd <- br
 
-for (y in 1:5){
+for (y in 1:3){
+  attem <- setValues(br, dat[, , 6, y])
   poten <- setValues(br, dat[, , 7, y])
-  diap <- setValues(br, dat[, , 8, y])
-  dd <- setValues(br, dat[, , 9, y])
+  weivolt <- setValues(br, dat[, , 8, y])
+  diap <- setValues(br, dat[, , 9, y])
   VoltDiap <- function(x, y){
     ss <- (subset(x, 2:nlayers(x)) - subset(x, 1:(nlayers(x)-1))) * (1 - y)[[2:nlayers(x)]]
     tmp <- calc(ss, fun = cumsum)
     return(tmp)
   }
-  voltdiap <- VoltDiap(poten, diap)
+  voltdiap <- VoltDiap(attem, diap)
   potential <- setValues(potential, values = getValues(poten[[53]]), layer = y)
   attempt <- setValues(attempt, values = getValues(voltdiap[[52]]), layer = y)
-  mismatch <- setValues(mismatch, values = getValues(poten[[53]] - voltdiap[[52]]), layer = y)
+  mismatch <- setValues(mismatch, values = getValues(voltdiap[[52]] - poten[[53]]), layer = y)
   diapause <- setValues(diapause, values = getValues(diap[[53]]), layer = y)
-  gdd <- setValues(gdd, values = getValues(dd[[53]]), layer = y)
+  # gdd <- setValues(gdd, values = getValues(dd[[53]]), layer = y)
   
 }
 
@@ -136,10 +137,11 @@ avg_pot <- calc(potential, mean)
 avg_att <- calc(attempt, mean)
 avg_mm <- calc(mismatch, mean)
 avg_diap <- calc(diapause, mean)
-avg_gdd <- calc(gdd, mean)
+# avg_gdd <- calc(gdd, mean)
 
 worst_diap <- calc(diapause, min)
 worst_mm <- calc(diapause, min)
+
 # # Raster prep for plots
 # # lastday is a raster that constrains the degree-day map
 # # when used with "stackSelect" function (each cell could have different end of season)
@@ -178,7 +180,7 @@ worst_mm <- calc(diapause, min)
 # TODO: make naming files automatic
 # continuous vs discrete color scales not automatic yet either, choose below
 species <- "Aphalara itadori"
-map_type <- "diapause" # "attempted" # "potential", "mismatch"
+map_type <- "attempted" #"diapause" # "attempted" # "potential", "mismatch"
 if (map_type == "diapause"){
   plttitle <- paste(species, map_type, "proportion with photoperiodic cue", sep = " ")
   pltsub <- paste(min(yr), "to", max(yr), "worst year", sep = " ")
@@ -192,14 +194,14 @@ if (map_type == "diapause"){
     pltsub <- paste(min(yr), "to", max(yr), "mean", sep = " ")
   }
 }
-pltname <- paste(species, map_type, yr, ".png", sep = "_") 
+pltname <- paste(species, map_type, biotype, ".png", sep = "_") 
 
 
 to_map <- switch(map_type,
                  "mismatch" = avg_mm,
                  "potential" = avg_pot,
                  "attempted" = avg_att,
-                 "diapause" = worst_diap)
+                 "diapause" = avg_diap)
 df <- as.data.frame(to_map, xy=TRUE)
 
 names(df)[3] <- "Voltinism"
@@ -215,30 +217,34 @@ df$Voltinism <- factor(df$Voltinism, levels = c(minvolt:maxvolt))
 df <- df %>% 
   filter(!is.na(Voltinism))
 
-# 
-# # continuous voltinism for visual
-# df <- df %>% 
-#   filter(!is.na(Voltinism)) %>% 
-#   mutate(Voltinism = ifelse(Voltinism >= 5, 5, Voltinism))
+
+# continuous voltinism for visual
+df <- df %>%
+  filter(!is.na(Voltinism)) %>%
+  mutate(Voltinism = ifelse(Voltinism >= 5, 5, Voltinism))
 
 
 # Plot, several options for scaling, choose one
 # viridis needs to be told discrete or continuous
 # gradient2 only does continuous
 # brewer only does discrete classes
-theme_set(theme_void(base_size = 16)) 
+pts <- data.frame(x = -123.2326, y = 44.8478)
+
+theme_set(theme_void(base_size = 20))
 tmpplt <- ggplot(data = df, aes(x, y, fill = Voltinism)) +
   geom_raster() +
-  geom_polygon(data = reg.df, aes(x = long, y = lat, group = group), fill = NA, color = "dark gray", inherit.aes = FALSE, size = .25) +
-  scale_fill_viridis(breaks = seq(0, 7, by = 1), name = ifelse(map_type == "diapause", "% Diapause",  "Generations"), na.value = "white", begin = 0, end = ifelse(map_type == "diapause", 1, maxvolt/7), discrete = ifelse(map_type == "diapause", FALSE, TRUE)) +
+  geom_polygon(data = reg.df, aes(x = long, y = lat, group = group), fill = NA, color = "black", inherit.aes = FALSE, size = 1) +
+  # scale_fill_viridis(breaks = seq(0, 7, by = 1), name = ifelse(map_type == "diapause", "% Diapause",  "Generations"), na.value = "white", begin = 0, end = ifelse(map_type == "diapause", 1, maxvolt/7), discrete = ifelse(map_type == "diapause", FALSE, TRUE)) +
   # scale_fill_gradient2(low=muted("red"), high=muted("blue"), midpoint = 0) +
+  scale_fill_viridis(na.value = "white", begin = 0, end = maxvolt / 3.58) +
   # scale_fill_brewer(guide = guide_legend(reverse = TRUE), type = "div", palette = "RdBu") +
-  ggtitle(plttitle, subtitle = pltsub) +
+  geom_point(data = pts, aes(x, y), inherit.aes = FALSE, size = 2) +
+  # ggtitle(plttitle, subtitle = pltsub) +
   coord_fixed(1.3, xlim = c(min(df$x), max(df$x)), ylim = c(min(df$y), max(df$y)), expand = FALSE, clip = "on") +
   theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
 tmpplt
 ggsave(pltname,
-       plot = tmpplt, device = "png", width = 9, height = 4.5, units = "in")
+       plot = tmpplt, device = "png", width = 6, height = 10, units = "in")
 
 
 

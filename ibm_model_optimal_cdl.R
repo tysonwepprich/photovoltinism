@@ -23,28 +23,31 @@ source('species_params.R')
 yr           <- 2016
 start_doy    <- 1
 end_doy      <- 365
-region_param <- "NORTHWEST" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
-species      <- "APHA" # GCA/APHA/DCA
+region_param <- "NW_SMALL" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
+species      <- "GCA" # GCA/APHA/DCA
 biotype      <- "S" # TODO: add options for each species, N or S for APHA and GCA
 
 nsim <- 1000
 # lambda <- 1.1
 lat <- 43.39
 lon <- -123.35
-startyear <- 2014
-endyear <- 2017
+startyear <- 1993
+endyear <- 2018
 site <- "Sutherlin"
 
 sites <- data.frame(ID = c("Corvallis, OR", "JB Lewis-McChord, WA", 
                            "Yakima Training Center, WA", "Camp Rilea, OR",
                            "S Portland, OR",
-                           "Sutherlin, OR", "Bellingham, WA"),
+                           "Sutherlin, OR", "Bellingham, WA",
+                           "McArthur, CA", "Palermo, CA", "Baskett Slough, OR"),
                     x = c(-123.263, -122.53, -120.461073,
                           -123.934759, -122.658887,
-                          -123.315854, -122.479482),
+                          -123.315854, -122.479482,
+                          -121.41, -121.58, -123.27),
                     y = c(44.564, 47.112, 46.680138,
                           46.122867, 45.470532,
-                          43.387721, 48.756105))
+                          43.387721, 48.756105,
+                          41.10, 39.41, 44.98))
 coordinates(sites) <- ~x+y
 REGION <- assign_extent(region_param = region_param)
 
@@ -58,7 +61,7 @@ REGION <- assign_extent(region_param = region_param)
 
 # photoperiod decision inclusion
 # 2 for logistic, 1 for single value CDL, 0 for none
-model_CDL  <- 2
+model_CDL  <- 1
 
 
 # Derived parameters -----
@@ -67,107 +70,126 @@ params <- species_params(mod_type = "ibm", species, biotype, nsim, model_CDL, dd
 ldt <- params$stage_ldt[1]
 udt <- params$stage_udt[1]
 
-# # Download weather data ----
-# temp <- download_daymet(site = "default", lat = lat, lon = lon,
-#                         start = startyear, end = endyear, internal = TRUE,
-#                         silent = TRUE, force = FALSE)
+# Download weather data ----
+# janky because two sites in water without daymet data
+gddsites <- readRDS("lythrum.rds")
+# siteslist <- list()
+for(i in 202:nrow(gddsites)){
+  temp <- download_daymet(site = as.character(i), lat = gddsites$Latitude[i], lon = gddsites$Longitude[i],
+                          start = startyear, end = endyear, internal = TRUE,
+                          silent = TRUE, force = FALSE)
+  outdf <- temp$data %>% 
+    mutate(elev = temp$altitude)
+  siteslist[[i-2]] <- outdf
+}
+gdd <- bind_rows(siteslist) %>% 
+  mutate(Site = rep(1:746, each=9490),
+         Latitude = gddsites$Latitude[-c(181,201)][Site],
+         Longitude = gddsites$Longitude[-c(181,201)][Site])
+sites <- 1:746
+
+saveRDS(gdd, "lythrum_gdd.rds")
+# Calculate degree days and photoperiod ----
+
+
+gdd_all <- gdd %>%
+  filter(yday <= end_doy & yday >= start_doy) %>%
+  rowwise() %>%
+  mutate(degday = TriDD(tmax..deg.c., tmin..deg.c., ldt, udt)) %>%
+  ungroup() %>%
+  group_by(Site, year) %>%
+  arrange(yday) %>%
+  mutate(accumdegday = cumsum(degday),
+         daylength = photoperiod(Latitude, yday),
+         daylength_daymet = dayl..s. / 60 / 60,
+         lightfrost = tmin..deg.c. <= 0,
+         hardfrost = tmin..deg.c. <= -2)
+
+
+# # MACA
+# # MACAv2 files have 5 years in one netcdf file
+# weather_path <- "data/maca"
 # 
-# # Calculate degree days and photoperiod ----
-# gdd_all <- temp$data %>% 
-#   filter(yday <= end_doy & yday >= start_doy) %>% 
-#   rowwise() %>% 
-#   mutate(degday = TriDD(tmax..deg.c., tmin..deg.c., ldt, udt)) %>% 
-#   ungroup() %>% 
-#   group_by(year) %>% 
-#   arrange(yday) %>% 
-#   mutate(accumdegday = cumsum(degday),
-#          daylength = photoperiod(lat, yday),
-#          lightfrost = tmin..deg.c. <= 0,
-#          hardfrost = tmin..deg.c. <= -2)
-
-
-# MACA
-# MACAv2 files have 5 years in one netcdf file
-weather_path <- "data/maca"
-
-# if (weather_data_source == "macav2"){
-  yr_path <- paste(weather_path, yr, sep = "/")
-  tminbrick <- brick(paste(yr_path, list.files(yr_path)[grep(x = list.files(yr_path), pattern = "tasmin", fixed = TRUE)], sep = "/"), 
-                     varname = "air_temperature", lvar = 3, level = 4)
-  tmaxbrick <- brick(paste(yr_path, list.files(yr_path)[grep(x = list.files(yr_path), pattern = "tasmax", fixed = TRUE)], sep = "/"),
-                     varname = "air_temperature", lvar = 3, level = 4)
-  
-  macafile <- basename(tmaxbrick@file@name)
-  yrs <- gregexpr(pattern = "[0-9]{4}", text = macafile)
-  yr1 <- as.numeric(substr(macafile, start = yrs[[1]][1], stop = yrs[[1]][1] + 3))
-  yr2 <- as.numeric(substr(macafile, start = yrs[[1]][2], stop = yrs[[1]][2] + 3))
-  yr <- yr1:yr2
-  
-  tminbrick <- shift(tminbrick, x = -360)
-  tmaxbrick <- shift(tmaxbrick, x = -360)
-  
-  # geo_template <- crop(tminbrick[[1]], REGION)
-  # template <- crop(aggregate(raster(files[1]), fact = 2), REGION)
-  # geo_template[!is.na(geo_template)] <- 0
-# }
-
-  geo_template <- crop(tminbrick[[1]], REGION)
-  tminbrick <- crop(tminbrick, geo_template)
-  tmaxbrick <- crop(tmaxbrick, geo_template)
-  
-  daylist <- list()
-  for (modyear in yr){
-    for(yd in 1:365){
-    tminfiles <- tminbrick[[which(lubridate::year(as.Date(getZ(tminbrick))) == modyear)]][[yd]]
-    tmaxfiles <- tmaxbrick[[which(lubridate::year(as.Date(getZ(tmaxbrick))) == modyear)]][[yd]]
-    
-    tmin <- -273.15 + raster::extract(tminfiles, sites)
-    tmax <- -273.15 + raster::extract(tmaxfiles, sites)
-    
-    outdf <- data.frame(SiteID = sites$ID, lat = sites@coords[,2], lon = sites@coords[,1],
-                        day = yd, year = modyear, tmin = tmin, tmax = tmax)
-    
-    daylist[[length(daylist) + 1]] <- outdf
-    }
-  }
-    
-    gdd_all <- bind_rows(daylist) %>% 
-      mutate(degday = TriDD(tmax, tmin, ldt, udt)) %>% 
-      group_by(year) %>% 
-      arrange(day) %>% 
-      mutate(accumdegday = cumsum(degday),
-             daylength = photoperiod(lat, day),
-             lightfrost = tmin <= 0,
-             hardfrost = tmin <= -2) %>% 
-      mutate(yday = day)
-
-  
+# # if (weather_data_source == "macav2"){
+#   yr_path <- paste(weather_path, yr, sep = "/")
+#   tminbrick <- brick(paste(yr_path, list.files(yr_path)[grep(x = list.files(yr_path), pattern = "tasmin", fixed = TRUE)], sep = "/"), 
+#                      varname = "air_temperature", lvar = 3, level = 4)
+#   tmaxbrick <- brick(paste(yr_path, list.files(yr_path)[grep(x = list.files(yr_path), pattern = "tasmax", fixed = TRUE)], sep = "/"),
+#                      varname = "air_temperature", lvar = 3, level = 4)
+#   
+#   macafile <- basename(tmaxbrick@file@name)
+#   yrs <- gregexpr(pattern = "[0-9]{4}", text = macafile)
+#   yr1 <- as.numeric(substr(macafile, start = yrs[[1]][1], stop = yrs[[1]][1] + 3))
+#   yr2 <- as.numeric(substr(macafile, start = yrs[[1]][2], stop = yrs[[1]][2] + 3))
+#   yr <- yr1:yr2
+#   
+#   tminbrick <- shift(tminbrick, x = -360)
+#   tmaxbrick <- shift(tmaxbrick, x = -360)
+#   
+#   # geo_template <- crop(tminbrick[[1]], REGION)
+#   # template <- crop(aggregate(raster(files[1]), fact = 2), REGION)
+#   # geo_template[!is.na(geo_template)] <- 0
+# # }
+# 
+#   geo_template <- crop(tminbrick[[1]], REGION)
+#   tminbrick <- crop(tminbrick, geo_template)
+#   tmaxbrick <- crop(tmaxbrick, geo_template)
+#   
+#   daylist <- list()
+#   for (modyear in yr){
+#     for(yd in 1:365){
+#     tminfiles <- tminbrick[[which(lubridate::year(as.Date(getZ(tminbrick))) == modyear)]][[yd]]
+#     tmaxfiles <- tmaxbrick[[which(lubridate::year(as.Date(getZ(tmaxbrick))) == modyear)]][[yd]]
+#     
+#     tmin <- -273.15 + raster::extract(tminfiles, sites)
+#     tmax <- -273.15 + raster::extract(tmaxfiles, sites)
+#     
+#     outdf <- data.frame(SiteID = sites$ID, lat = sites@coords[,2], lon = sites@coords[,1],
+#                         day = yd, year = modyear, tmin = tmin, tmax = tmax)
+#     
+#     daylist[[length(daylist) + 1]] <- outdf
+#     }
+#   }
+#     
+#     gdd_all <- bind_rows(daylist) %>% 
+#       mutate(degday = TriDD(tmax, tmin, ldt, udt)) %>% 
+#       group_by(year) %>% 
+#       arrange(day) %>% 
+#       mutate(accumdegday = cumsum(degday),
+#              daylength = photoperiod(lat, day),
+#              lightfrost = tmin <= 0,
+#              hardfrost = tmin <= -2) %>% 
+#       mutate(yday = day)
+# 
+#   saveRDS(gdd_all, "gdd_all_maca.rds")
+gdd_all <- readRDS("gdd_all_maca.rds")
 
 # 3. Run lifestage model -----
 
-cdls <- expand.grid(cdl = seq(min(gdd_all$daylength), 18, length.out = 20),
+cdls <- expand.grid(cdl = seq(10, 17.5, by = .25),
                     cdl_sd = seq(0, 2, length.out = 4),
-                    lambda = seq(0.6, 3, by = 0.4))
+                    lambda = seq(0.6, 3, by = 0.4),
+                    site = sites)
 
-    cdls <- expand.grid(cdl = NA,
-                        cdl_sd = NA,
-                        lambda = 1)
+    # cdls <- expand.grid(cdl = NA,
+    #                     cdl_sd = NA,
+    #                     lambda = 1)
     
     startyear <- min(gdd_all$year)
     endyear <- max(gdd_all$year)
 
-ncores <- 4
+ncores <- 6
 cl <- makePSOCKcluster(ncores)
 registerDoParallel(cl)
 
 test <- system.time({
   
-  # outlist <- foreach(ncdl = 1:nrow(cdls),
-  #                    .packages = "dplyr",
-  #                    .inorder = FALSE) %:%
-  outlist <- foreach(site = 1:length(sites),
+  outlist <- foreach(ncdl = 1:nrow(cdls),
                      .packages = "dplyr",
-                     .inorder = TRUE) %:%
+                     .inorder = FALSE) %:%
+  # outlist <- foreach(site = 1:length(sites),
+  #                    .packages = "dplyr",
+  #                    .inorder = TRUE) %:%
     foreach(y = 1:length(startyear:endyear),
             .packages = "dplyr",
             .inorder = TRUE) %dopar%{
@@ -334,9 +356,6 @@ test <- system.time({
                 }
                 
                 ind_df <- rbind(olddf, newdf)
-                
-                
-                
               }  # daily loop
               
                # Summarize results -----
@@ -404,13 +423,13 @@ res <- bind_rows(flatten(outlist)) %>%
 # Go to cohort model and test by putting voltinism calc (1st for each cohort)
 # in matrix of weighted results 
 
-coh <- readRDS("site_array_apha.rds")
+coh <- readRDS("site_array_gca_17coh.rds")
 
 # extract gdd, voltinism, lost, 
 cohlist <- list()
 for (w in 1:53){
   
-  coh_att <- data.frame(coh[, w, 6,])
+  coh_att <- data.frame(coh[, w, 7,])
   names(coh_att) <- paste0("X", 2016:2020)
   coh_att <- coh_att %>% 
     mutate(ID = sites$ID) %>% 
@@ -419,7 +438,7 @@ for (w in 1:53){
            week = w)
   
   
-  coh_volt <- data.frame(coh[, w, 7,])
+  coh_volt <- data.frame(coh[, w, 8,])
   names(coh_volt) <- paste0("X", 2016:2020)
   coh_volt <- coh_volt %>% 
     mutate(ID = sites$ID) %>% 
@@ -427,7 +446,15 @@ for (w in 1:53){
     mutate(year = gsub(pattern = "X", replacement = "", x = year, fixed = TRUE),
            week = w)
   
-  coh_diap <- data.frame(coh[, w, 8,])
+  coh_wvolt <- data.frame(coh[, w, 9,])
+  names(coh_wvolt) <- paste0("X", 2016:2020)
+  coh_wvolt <- coh_wvolt %>% 
+    mutate(ID = sites$ID) %>% 
+    tidyr::gather(year, wvolt, X2016:X2020) %>% 
+    mutate(year = gsub(pattern = "X", replacement = "", x = year, fixed = TRUE),
+           week = w)
+  
+  coh_diap <- data.frame(coh[, w, 10,])
   names(coh_diap) <- paste0("X", 2016:2020)
   coh_diap <- coh_diap %>% 
     mutate(ID = sites$ID) %>% 
@@ -437,48 +464,55 @@ for (w in 1:53){
   
   coh_all <-  coh_att %>% 
     left_join(coh_volt) %>% 
+    left_join(coh_wvolt) %>% 
     left_join(coh_diap)
   cohlist[[w]] <- coh_all
 }
 cohplot <- bind_rows(cohlist) %>% 
-  tidyr::gather(var, val, attempted, completed, diap)
+  tidyr::gather(var, val, attempted, completed, wvolt, diap)
 
 # plot helps show that diapause * completed doesn't make sense, if 
 
 ggplot(cohplot, aes(x = week, y = val, group = ID, color = ID)) +
   geom_line() +
-  facet_grid(var ~ year) +
+  facet_grid(var ~ year, scales = "free") +
   theme_bw(base_size = 14)
 
 # best diapause cutoff to make IBM??
-cohplot <- bind_rows(cohlist)
-ggplot(cohplot, aes(x = week, y = ifelse(diap > .75, NA, 1) * completed, group = ID, color = ID)) +
-  geom_line(aes(size = 1-diap)) +
-  facet_grid(. ~ year) +
-  theme_bw(base_size = 14)
+# cohplot <- bind_rows(cohlist)
+# ggplot(cohplot, aes(x = week, y = ifelse(diap > .75, NA, 1) * completed, group = ID, color = ID)) +
+#   geom_line(aes(size = 1-diap)) +
+#   facet_grid(. ~ year) +
+#   theme_bw(base_size = 14)
+# 
+# coh_volt <- cohplot %>% 
+#   mutate(d25 = ifelse(diap > .25, NA, 1) * completed,
+#          d50 = ifelse(diap > .5, NA, 1) * completed,
+#          d75 = ifelse(diap > .75, NA, 1) * completed,
+#          d90 = ifelse(diap > .9, NA, 1) * completed,
+#          d95 = ifelse(diap > .95, NA, 1) * completed,
+#          d98 = ifelse(diap > .98, NA, 1) * completed) %>% 
+#   group_by(ID, year) %>% 
+#   summarise_all(max, na.rm = TRUE) %>% 
+#   arrange(year, ID)
+# 
+# # good correlation between the cohort and IBM voltinism estimates now
+# # but what does it really mean? 
+# # is this just weighted voltinism? Why does it work for the cohort model?
+# coh_volt <- coh_volt %>% ungroup() %>%  mutate(res$voltinism)
+# plot(coh_volt$`res$voltinism`, coh_volt$d95)
+# abline(0, 1)
 
-coh_volt <- cohplot %>% 
-  mutate(d25 = ifelse(diap > .25, NA, 1) * completed,
-         d50 = ifelse(diap > .5, NA, 1) * completed,
-         d75 = ifelse(diap > .75, NA, 1) * completed,
-         d90 = ifelse(diap > .9, NA, 1) * completed,
-         d95 = ifelse(diap > .95, NA, 1) * completed,
-         d98 = ifelse(diap > .98, NA, 1) * completed) %>% 
+# this matches IBM well if attempted used instead of completed, why?
+cohdf <- bind_rows(cohlist) %>% 
   group_by(ID, year) %>% 
-  summarise_all(max, na.rm = TRUE) %>% 
-  arrange(year, ID)
-
-# good correlation between the cohort and IBM voltinism estimates now
-# but what does it really mean? 
-# is this just weighted voltinism? Why does it work for the cohort model?
-coh_volt <- coh_volt %>% ungroup() %>%  mutate(res$voltinism)
-plot(coh_volt$`res$voltinism`, coh_volt$d95)
-abline(0, 1)
-
-
-cohdf <- bind_rows(cohlist) %>% filter(week == 53) %>% 
+  arrange(week) %>% 
+  # mutate(diapnewgen = cumsum(c(0, diff(attempted)) * (1-diap))) %>% 
+  filter(week == 53) %>% 
+  ungroup() %>% 
   rename(SiteID = ID, Year = year) %>% 
-  mutate(Year = as.numeric(Year))
+  mutate(Year = as.numeric(Year),
+         mismatch = wvolt - completed)
 
 ind_diap <- res %>% 
   rowwise() %>% 
@@ -486,7 +520,7 @@ ind_diap <- res %>%
          ind_diap = ind_comp / (ind_comp + lost)) %>% 
   left_join(cohdf)
 
-plot(ind_diap$voltinism, ind_diap$completed)
+plot(ind_diap$voltinism, ind_diap$wvolt)
 abline(0, 1)
 plot(ind_diap$ind_diap, ind_diap$diap)
 abline(0, 1)
