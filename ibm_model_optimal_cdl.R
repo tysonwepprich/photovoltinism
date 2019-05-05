@@ -27,7 +27,7 @@ region_param <- "NW_SMALL" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
 species      <- "GCA" # GCA/APHA/DCA
 biotype      <- "S" # TODO: add options for each species, N or S for APHA and GCA
 
-nsim <- 1000
+nsim <- 500
 # lambda <- 1.1
 lat <- 43.39
 lon <- -123.35
@@ -90,7 +90,7 @@ sites <- 1:746
 
 saveRDS(gdd, "lythrum_gdd.rds")
 # Calculate degree days and photoperiod ----
-
+gdd <- readRDS("lythrum_gdd.rds")
 
 gdd_all <- gdd %>%
   filter(yday <= end_doy & yday >= start_doy) %>%
@@ -162,45 +162,58 @@ gdd_all <- gdd %>%
 #       mutate(yday = day)
 # 
 #   saveRDS(gdd_all, "gdd_all_maca.rds")
-gdd_all <- readRDS("gdd_all_maca.rds")
+# gdd_all <- readRDS("gdd_all_maca.rds")
 
 # 3. Run lifestage model -----
 
-cdls <- expand.grid(cdl = seq(10, 17.5, by = .25),
-                    cdl_sd = seq(0, 2, length.out = 4),
-                    lambda = seq(0.6, 3, by = 0.4),
+# just far western sites
+# took 10.8 hours with 40 cores
+# gdd_west <- gdd_all %>% 
+#   filter(Longitude < -120)
+gdd_midwest <- gdd_all %>%
+  filter(Longitude > -95 & Longitude < -90)
+
+sites <- unique(gdd_midwest$Site)
+cdls <- expand.grid(cdl = seq(12, 17.5, by = .25),
+                    cdl_sd = seq(0, .66, length.out = 3),
+                    lambda = seq(0.5, 2, by = 0.5),
                     site = sites)
 
-    # cdls <- expand.grid(cdl = NA,
-    #                     cdl_sd = NA,
-    #                     lambda = 1)
-    
-    startyear <- min(gdd_all$year)
-    endyear <- max(gdd_all$year)
+# cdls <- expand.grid(cdl = NA,
+#                     cdl_sd = NA,
+#                     lambda = 1)
 
-ncores <- 6
+
+# startyear <- 2001
+# endyear <- 2005
+startyear <- min(gdd_all$year)
+endyear <- max(gdd_all$year)
+
+ncores <- 40
 cl <- makePSOCKcluster(ncores)
 registerDoParallel(cl)
 
 test <- system.time({
   
   outlist <- foreach(ncdl = 1:nrow(cdls),
-                     .packages = "dplyr",
+                     .packages = c("raster", "dplyr"),
                      .inorder = FALSE) %:%
-  # outlist <- foreach(site = 1:length(sites),
-  #                    .packages = "dplyr",
-  #                    .inorder = TRUE) %:%
+    # outlist <- foreach(site = 1:length(sites),
+    #                    .packages = "dplyr",
+    #                    .inorder = TRUE) %:%
     foreach(y = 1:length(startyear:endyear),
-            .packages = "dplyr",
-            .inorder = TRUE) %dopar%{
+            .packages = c("raster", "dplyr"),
+            .inorder = FALSE) %dopar%{
               
               
               
               allyrs <- c(startyear:endyear)
               thisyr <- allyrs[y]
-              gdd <- gdd_all %>% 
-                filter(year == thisyr & SiteID == sites$ID[site])
+              gdd <- gdd_midwest %>% 
+                filter(year == thisyr & Site == cdls[ncdl, "site"])
+              # filter(year == thisyr & SiteID == sites$ID[site])
               
+              set.seed(cdls[ncdl, "site"] * thisyr)
               # Varying traits from parameter file
               stgorder   <- params$stgorder
               stage_dd   <- params$stage_dd
@@ -208,13 +221,13 @@ test <- system.time({
               stage_udt  <- params$stage_udt
               photo_sens <- params$photo_sens
               # CDL        <- params$CDL[1]
-              cdl_b0     <- params$CDL[2]
-              cdl_b1     <- params$CDL[3]
+              # cdl_b0     <- params$CDL[2]
+              # cdl_b1     <- params$CDL[3]
               
-              # cdl_mu <- cdls[ncdl, "cdl"]
-              # cdl_sd <- cdls[ncdl, "cdl_sd"]
-              # lambda <- cdls[ncdl, "lambda"]
-              lambda <- 1
+              cdl_mu <- cdls[ncdl, "cdl"]
+              cdl_sd <- cdls[ncdl, "cdl_sd"]
+              lambda <- cdls[ncdl, "lambda"]
+              # lambda <- 1
               
               # vector of which individuals to simulate from data.frame
               ind_df <- data.frame(stage_dd)
@@ -330,7 +343,8 @@ test <- system.time({
                 if(max(ovip) > 0){
                   newrows <- newdf[which(newdf$indiv %in% ovip), ]
                   # simulate oviposition variation
-                  negg <- rpois(n = nrow(newrows), lambda = lambda)
+                  egg_lam <- ifelse(newrows$numgen == 0, 1, lambda)
+                  negg <- rpois(n = nrow(newrows), lambda = egg_lam)
                   newrows <- newrows[rep(row.names(newrows), negg), ]
                   
                   if(nrow(newrows) > 0){
@@ -358,47 +372,53 @@ test <- system.time({
                 ind_df <- rbind(olddf, newdf)
               }  # daily loop
               
-               # Summarize results -----
+              # Summarize results -----
               voltinism <- ind_df %>% 
                 filter(diapause == 1 & active == 0) %>% 
                 group_by(numgen) %>% 
                 tally() %>% 
                 stats::weighted.mean(x = .$numgen, w = .$n)
               
-              if(is.nan(voltinism)){ # nobody goes into diapause, unrealistic
-                results <- NULL
-              }else{
-                
-                volt_comp <- ind_df %>%
-                  filter(diapause == 1 & active == 0) %>% 
-                  group_by(numgen) %>% 
-                  tally() %>% 
-                  tidyr::spread(numgen, n)
-                
-                names(volt_comp) <- paste("comp", names(volt_comp), sep = "_")
-                
-                volt_att <- ind_df %>%
-                  filter(numgen > 0) %>% 
-                  group_by(numgen) %>% 
-                  tally() %>% 
-                  tidyr::spread(numgen, n)
-                
-                names(volt_att) <- paste("att", names(volt_att), sep = "_")
-                
-                
-                lost <- ind_df %>% 
-                  filter(active == 1) %>% 
-                  group_by(numgen) %>% 
-                  nrow()
-                
-                ann_lam <- (ind_df %>% 
-                                   filter(diapause == 1 & active == 0) %>% 
-                                   nrow()) / nsim
-                
-                # results <- data.frame(Year = thisyr, cdl_mu, cdl_sd, lambda, voltinism, lost, volt_att, volt_comp, ann_lam)
-              
-                results <- data.frame(SiteID = sites$ID[site], Year = thisyr, lambda, voltinism, lost, volt_att, volt_comp, ann_lam)
+              if(is.nan(voltinism)){ 
+                voltinism <- data.frame(voltinism = NA)
               }
+              
+              
+              volt_comp <- ind_df %>%
+                filter(diapause == 1 & active == 0) %>% 
+                group_by(numgen) %>% 
+                tally() %>% 
+                tidyr::spread(numgen, n)
+              
+              
+              if(nrow(volt_comp) == 0){
+                volt_comp <- data.frame(comp_1 = NA)
+              }else{
+                names(volt_comp) <- paste("comp", names(volt_comp), sep = "_")
+              }
+              
+              volt_att <- ind_df %>%
+                filter(numgen > 0) %>% 
+                group_by(numgen) %>% 
+                tally() %>% 
+                tidyr::spread(numgen, n)
+              
+              names(volt_att) <- paste("att", names(volt_att), sep = "_")
+              
+              
+              lost <- ind_df %>% 
+                filter(active == 1) %>% 
+                group_by(numgen) %>% 
+                nrow()
+              
+              ann_lam <- (ind_df %>% 
+                            filter(diapause == 1 & active == 0) %>% 
+                            nrow()) / nsim
+              
+              results <- data.frame(SiteID = cdls[ncdl, "site"], Year = thisyr, cdl_mu, cdl_sd, lambda, voltinism, lost, volt_att, volt_comp, ann_lam)
+              
+              # results <- data.frame(SiteID = sites$ID[site],
+              # Year = thisyr, lambda, voltinism, lost, volt_att, volt_comp, ann_lam)
               
               return(results)
               
@@ -412,7 +432,7 @@ stopCluster(cl)
 
 res <- bind_rows(flatten(outlist)) %>% 
   arrange(Year, SiteID)
-
+# saveRDS(res, "ibm_results_midwest.rds")
 
 
 # Compare to cohort model results
@@ -527,15 +547,17 @@ abline(0, 1)
 
 
 # Optimal CDL plots
-###############
-
 library(ggplot2)
 library(viridis)
+###############
+res <- readRDS("ibm_results.rds") %>% 
+  filter(SiteID == 123, cdl_sd == .33, lambda == 1.5, Year > 1993)
+
 plt <- ggplot(res, aes(x = cdl_mu, y = voltinism)) +
   geom_point(aes(color = ann_lam)) +
   scale_x_reverse() +
   scale_color_viridis(begin = 0, end = 1) +
-  facet_wrap(cdl_sd~Year, ncol = 4) +
+  facet_wrap(~Year, ncol = 5) +
   theme_bw() +
   ylab("Voltinism: weighted average of generations completed") +
   xlab("Critical photoperiod") +
@@ -550,7 +572,7 @@ plt <- ggplot(res, aes(x = cdl_mu, y = lambda, fill = log(ann_lam))) +
   geom_raster() +
   scale_x_reverse() +
   scale_fill_viridis(begin = 1, end = 0) +
-  facet_wrap(cdl_sd~Year, ncol = 4) +
+  facet_wrap(~Year, ncol = 3) +
   theme_bw() +
   ylab("Between generation lambda") +
   xlab("Critical photoperiod") +
@@ -563,7 +585,7 @@ plt <- ggplot(res, aes(x = cdl_mu, y = log(ann_lam), group = lambda, color = lam
   geom_line() +
   scale_x_reverse() +
   scale_color_viridis(begin = 1, end = 0) +
-  facet_wrap(cdl_sd~Year, ncol = 4) +
+  facet_wrap(cdl_sd~Year, ncol = 3) +
   theme_bw() +
   ylab("Log(annual lambda)") +
   xlab("Critical photoperiod") +
@@ -571,7 +593,8 @@ plt <- ggplot(res, aes(x = cdl_mu, y = log(ann_lam), group = lambda, color = lam
 plt
 
 # across years
-
+res <- readRDS("ibm_results.rds") %>% 
+  filter(SiteID == 193)
 
 gm_mean = function(x, na.rm=TRUE){
   exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
@@ -580,8 +603,8 @@ gm_mean = function(x, na.rm=TRUE){
 geom_lam <- res %>% 
   # filter(Year > 2007) %>% 
   group_by(cdl_mu, cdl_sd, lambda) %>% 
-  tidyr::complete(Year, cdl_mu, cdl_sd, lambda, fill = list(ann_lam = 0)) %>% 
-  summarise(mean_annual_lambda = gm_mean(ann_lam))
+  # tidyr::complete(Year, cdl_mu, cdl_sd, lambda, fill = list(ann_lam = 0)) %>% 
+  summarise(mean_annual_lambda = gm_mean(ann_lam + 0.001))
 
 plt <- ggplot(geom_lam, aes(x = cdl_mu, y = lambda, fill = log(mean_annual_lambda))) +
   geom_raster() +
@@ -607,6 +630,92 @@ plt <- ggplot(geom_lam, aes(x = cdl_mu, y = log(mean_annual_lambda), group = lam
 plt
 
 
+# best cdl combo
+res <- readRDS("ibm_results.rds")
+geom_lam <- res %>% 
+  group_by(SiteID, cdl_mu, cdl_sd, lambda) %>% 
+  summarise(mean_annual_lambda = gm_mean(ann_lam + 0.001),
+            mean_lost = mean(lost),
+            mean_wvolt = mean(ifelse(is.na(voltinism), 0, voltinism)))
+
+# ggplot(geom_lam, aes(x = mean_annual_lambda)) +
+#   geom_density() +
+#   facet_wrap(~lambda)
+
+# maximize geometric mean of annual lambda (non including overwintering)
+best_cdl <- geom_lam %>% 
+  filter(lambda == 1.5) %>% 
+  group_by(SiteID) %>% 
+  mutate(diffbest = mean_annual_lambda - max(mean_annual_lambda)) %>% 
+  filter(diffbest == 0) %>% 
+  arrange(SiteID, cdl_mu) %>% 
+  slice(1)
+
+best_wvolt <- geom_lam %>% 
+  filter(lambda == 1.5) %>% 
+  group_by(SiteID) %>% 
+  mutate(diffbest = mean_wvolt - max(mean_wvolt)) %>% 
+  filter(diffbest == 0) %>% 
+  arrange(SiteID, cdl_mu) %>% 
+  slice(1)
+
+best_lost <- geom_lam %>% 
+  filter(lambda == 1.5) %>% 
+  group_by(SiteID) %>% 
+  mutate(diffbest = mean_lost - min(mean_lost)) %>% 
+  filter(diffbest == 0) %>% 
+  arrange(SiteID, cdl_mu) %>% 
+  slice(1)
+
+
+# extract voltinism/lost/attempted info for the row with best cdl
+for (site in unique(res$SiteID)){
+  best <- best_cdl %>% filter(SiteID == site)
+  tmp <- res %>% 
+    filter(SiteID == site, cdl_mu == best$cdl_mu, cdl_sd == best$cdl_sd, lambda == best$lambda)
+  
+  attempts <- tmp %>% 
+    tidyr::gather(gen, num, starts_with("att"))
+  
+  
+}
+
+
+# site variables from gdd data
+site_gdd <- gdd_west %>% 
+  group_by(Site) %>% 
+  summarise(mean_accumdd = mean(accumdegday[yday == 365]),
+            early_accumdd = mean(accumdegday[yday == 170]),
+            late_accumdd = mean(accumdegday[yday == 365] - accumdegday[yday == 170]),
+            percgdd_early = early_accumdd / late_accumdd,
+            lat = Latitude[1],
+            lon = Longitude[1])
+
+# map
+dat <- left_join(best_cdl, site_gdd, by = c("SiteID" = "Site"))
+summary(lm(cdl_mu ~ scale(mean_accumdd) * scale(lat) * scale(percgdd_early), data = dat))
+
+region <- rgdal::readOGR("./src/ref/ne_50m_admin_1_states_provinces_lakes", 'ne_50m_admin_1_states_provinces_lakes', encoding='UTF-8')
+# region <-spTransform(region, CRS(proj4string(template)))
+reg.points = fortify(region, region="name_en")
+reg.df = left_join(reg.points, region@data, by = c("id" = "name_en"))
+theme_set(theme_bw(base_size = 20))
+
+
+tmpplt <- ggplot() +
+  geom_polygon(data = reg.df, aes(x = long, y = lat, group = group), fill = NA, color = "light gray", inherit.aes = FALSE, size = 1, alpha = .3) +
+  # geom_point(data = dat, aes(x = lon, y = lat, color = as.factor(round(mean_wvolt))), alpha = 1, size = 3, inherit.aes = FALSE) +
+  # scale_color_viridis(discrete = TRUE) +
+  geom_point(data = dat, aes(x = lon, y = lat, color = mean_annual_lambda), alpha = 1, size = 3, inherit.aes = FALSE) +
+  scale_color_viridis(discrete = FALSE) +
+  coord_fixed(1.3, xlim = c(-126.5, -119.5), ylim = c(36, 52), expand = FALSE, clip = "on") +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank())
+tmpplt
+
+
+
 # adjust for lambda
 lamlist <- list()
 lamrange <- seq(.9, 3, length.out = 25)
@@ -624,7 +733,7 @@ for (i in 1:nrow(res)){
       mutate(lambda = (num * (lamrange[j]) ^ gen))
     
     lamlist[[(length(lamlist) + 1)]] <- tmp %>% 
-      dplyr::select(Year, CDL, voltinism, lost) %>% 
+      dplyr::select(Year, cdl_mu, cdl_sd, voltinism, lost) %>% 
       mutate(gen_lambda = lamrange[j],
              annual_lambda = sum(lam$lambda) / 100)
   }
