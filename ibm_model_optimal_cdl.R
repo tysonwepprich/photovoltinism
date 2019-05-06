@@ -65,7 +65,7 @@ model_CDL  <- 1
 
 
 # Derived parameters -----
-params <- species_params(mod_type = "ibm", species, biotype, nsim, model_CDL, dd_sd = 0)
+params <- species_params(mod_type = "ibm", species, biotype, nsim, model_CDL, dd_sd = 5)
 
 ldt <- params$stage_ldt[1]
 udt <- params$stage_udt[1]
@@ -90,6 +90,12 @@ sites <- 1:746
 
 saveRDS(gdd, "lythrum_gdd.rds")
 # Calculate degree days and photoperiod ----
+g1 <- readRDS("ngermany.rds")
+g2 <- readRDS("sgermany.rds")
+gdd_all <- bind_rows(g1,g2) %>% 
+  rename(Year = YEAR, yday = YDAY)
+
+
 gdd <- readRDS("lythrum_gdd.rds")
 
 gdd_all <- gdd %>%
@@ -173,10 +179,10 @@ gdd_all <- gdd %>%
 gdd_midwest <- gdd_all %>%
   filter(Longitude > -95 & Longitude < -90)
 
-sites <- unique(gdd_midwest$Site)
+sites <- unique(gdd_all$Site)
 cdls <- expand.grid(cdl = seq(12, 17.5, by = .25),
                     cdl_sd = seq(0, .66, length.out = 3),
-                    lambda = seq(0.5, 2, by = 0.5),
+                    lambda = 1.5, #seq(0.5, 2, by = 0.5),
                     site = sites)
 
 # cdls <- expand.grid(cdl = NA,
@@ -186,10 +192,10 @@ cdls <- expand.grid(cdl = seq(12, 17.5, by = .25),
 
 # startyear <- 2001
 # endyear <- 2005
-startyear <- min(gdd_all$year)
-endyear <- max(gdd_all$year)
+startyear <- min(gdd_all$Year)
+endyear <- max(gdd_all$Year)
 
-ncores <- 40
+ncores <- 4
 cl <- makePSOCKcluster(ncores)
 registerDoParallel(cl)
 
@@ -209,8 +215,8 @@ test <- system.time({
               
               allyrs <- c(startyear:endyear)
               thisyr <- allyrs[y]
-              gdd <- gdd_midwest %>% 
-                filter(year == thisyr & Site == cdls[ncdl, "site"])
+              gdd <- gdd_all %>% 
+                filter(Year == thisyr & Site == cdls[ncdl, "site"])
               # filter(year == thisyr & SiteID == sites$ID[site])
               
               set.seed(cdls[ncdl, "site"] * thisyr)

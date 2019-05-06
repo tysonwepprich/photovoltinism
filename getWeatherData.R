@@ -20,22 +20,24 @@ library(ggridges)
 # look at other nearby stations to Inunaki pass (33.675, 130.55)
 # Fritzi collected in Kumamoto prefecture at 747-838m elev (center ~ 32.73, 130.79)
 # Northern population near Lake Toya, Hokkaido (center ~ 42.602851, 140.851949)
-tbar_stations <- nearest_stations(LAT = 42.6,
-                                  LON = 140.85,
-                                  distance = 200)
+tbar_stations <- nearest_stations(LAT = 54.4,
+                                  LON = 9.4,
+                                  distance = 75)
 load(system.file("extdata", "country_list.rda", package = "GSODR"))
 load(system.file("extdata", "isd_history.rda", package = "GSODR"))
 
 station_locations <- left_join(isd_history, country_list,
                                by = c("CTRY" = "FIPS"))
 
-Oz <- filter(station_locations, COUNTRY_NAME == "JAPAN")
+Oz <- filter(station_locations, COUNTRY_NAME == "GERMANY")
 
 stations <- Oz %>% 
-  mutate(enddate = lubridate::ymd(END)) %>% 
+  mutate(enddate = lubridate::ymd(END),
+         startdate = lubridate::ymd(BEGIN)) %>% 
   filter(STNID %in% tbar_stations,
-         ELEV_M > 100,
-         enddate > as.Date("2005-12-31")) %>% 
+         # ELEV_M > 100,
+         startdate < as.Date("1989-12-31"),
+         enddate > as.Date("1990-12-31")) %>% 
   dplyr::pull(STNID)
 
 
@@ -43,7 +45,7 @@ stations <- Oz %>%
 
 # just get IIZUKA for now, maybe adjust temperature with lapse rate for "International Standard Atmosephere"
 # nothing nearby Inunaki pass at similar elevation for comparison
-years <- 2000:2017
+years <- 1962:1991
 # stations <- c("478030-99999", "478070-99999", "478080-99999", "478090-99999")
 outlist <- list()
 safe_GSOD <- purrr::safely(get_GSOD)
@@ -59,7 +61,7 @@ for (yr in years){
         dplyr::select(YDAY, MAX, MIN) %>% 
         arrange(YDAY) %>% 
         mutate(
-          DD = TriDD(MAX, MIN, 6.1, 35),
+          DD = TriDD(MAX, MIN, 10, 37.8),
           AccumDD = cumsum(DD),
           YEAR = yr,
           STNID = st,
@@ -90,11 +92,15 @@ for (yr in years){
 }
 outdf <- bind_rows(outlist) %>% 
   # left_join(stations[, c("STNID", "ELEV_M")]) %>% 
-  mutate(REGION = "North")
+  mutate(Site = "Meggerdorf") %>% 
+  group_by(YEAR, YDAY, Site) %>% 
+  summarise(tmax = mean(MAX),
+            tmin = mean(MIN),
+            degday = TriDD(tmax, tmin, 10, 37.8))
 
 
 
-saveRDS(outdf, "njapan.rds")
+saveRDS(outdf, "ngermany.rds")
 
 
 df1 <- readRDS("sjapan.rds")
