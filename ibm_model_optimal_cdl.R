@@ -65,30 +65,30 @@ model_CDL  <- 1
 
 
 # Derived parameters -----
-params <- species_params(mod_type = "ibm", species, biotype, nsim, model_CDL, dd_sd = 0)
+params <- species_params(mod_type = "ibm", species, biotype, nsim, model_CDL, dd_sd = 5)
 
 ldt <- params$stage_ldt[1]
 udt <- params$stage_udt[1]
 
 # Download weather data ----
-# janky because two sites in water without daymet data
-gddsites <- readRDS("lythrum.rds")
-# siteslist <- list()
-for(i in 202:nrow(gddsites)){
-  temp <- download_daymet(site = as.character(i), lat = gddsites$Latitude[i], lon = gddsites$Longitude[i],
-                          start = startyear, end = endyear, internal = TRUE,
-                          silent = TRUE, force = FALSE)
-  outdf <- temp$data %>% 
-    mutate(elev = temp$altitude)
-  siteslist[[i-2]] <- outdf
-}
-gdd <- bind_rows(siteslist) %>% 
-  mutate(Site = rep(1:746, each=9490),
-         Latitude = gddsites$Latitude[-c(181,201)][Site],
-         Longitude = gddsites$Longitude[-c(181,201)][Site])
-sites <- 1:746
+# # janky because two sites in water without daymet data
+# gddsites <- readRDS("lythrum.rds")
+# # siteslist <- list()
+# for(i in 202:nrow(gddsites)){
+#   temp <- download_daymet(site = as.character(i), lat = gddsites$Latitude[i], lon = gddsites$Longitude[i],
+#                           start = startyear, end = endyear, internal = TRUE,
+#                           silent = TRUE, force = FALSE)
+#   outdf <- temp$data %>% 
+#     mutate(elev = temp$altitude)
+#   siteslist[[i-2]] <- outdf
+# }
+# gdd <- bind_rows(siteslist) %>% 
+#   mutate(Site = rep(1:746, each=9490),
+#          Latitude = gddsites$Latitude[-c(181,201)][Site],
+#          Longitude = gddsites$Longitude[-c(181,201)][Site])
+# sites <- 1:746
 
-saveRDS(gdd, "lythrum_gdd.rds")
+# saveRDS(gdd, "lythrum_gdd.rds")
 # Calculate degree days and photoperiod ----
 gdd <- readRDS("lythrum_gdd.rds")
 
@@ -104,6 +104,14 @@ gdd_all <- gdd %>%
          daylength_daymet = dayl..s. / 60 / 60,
          lightfrost = tmin..deg.c. <= 0,
          hardfrost = tmin..deg.c. <= -2)
+
+# naive max voltinism by gdd alone
+ow_dd <- params$stage_dd[,1]
+gen_dd <- rowSums(params$stage_dd[,-1])
+maxvolt <- gdd_all %>% 
+  filter(yday == 365) %>% 
+  summarise(maxgen = mean(floor((accumdegday - ow_dd) / gen_dd)))
+
 
 
 # # MACA
@@ -168,15 +176,15 @@ gdd_all <- gdd %>%
 
 # just far western sites
 # took 10.8 hours with 40 cores
-# gdd_west <- gdd_all %>% 
-#   filter(Longitude < -120)
-gdd_midwest <- gdd_all %>%
-  filter(Longitude > -95 & Longitude < -90)
+gdd_west <- gdd_all %>%
+  filter(Longitude < -120)
+# gdd_midwest <- gdd_all %>%
+#   filter(Longitude > -95 & Longitude < -90)
 
-sites <- unique(gdd_midwest$Site)
+sites <- unique(gdd_west$Site)
 cdls <- expand.grid(cdl = seq(12, 17.5, by = .25),
                     cdl_sd = seq(0, .66, length.out = 3),
-                    lambda = seq(0.5, 2, by = 0.5),
+                    lambda = 1.5, # seq(0.5, 2, by = 0.5),
                     site = sites)
 
 # cdls <- expand.grid(cdl = NA,
@@ -209,7 +217,7 @@ test <- system.time({
               
               allyrs <- c(startyear:endyear)
               thisyr <- allyrs[y]
-              gdd <- gdd_midwest %>% 
+              gdd <- gdd_west %>% 
                 filter(year == thisyr & Site == cdls[ncdl, "site"])
               # filter(year == thisyr & SiteID == sites$ID[site])
               
@@ -383,6 +391,12 @@ test <- system.time({
                 voltinism <- data.frame(voltinism = NA)
               }
               
+              attvoltinism <- ind_df %>% 
+                filter(diapause == 1 | active == 1) %>% 
+                # filter(numgen > 0) %>% 
+                group_by(numgen) %>% 
+                tally() %>% 
+                stats::weighted.mean(x = .$numgen, w = .$n)
               
               volt_comp <- ind_df %>%
                 filter(diapause == 1 & active == 0) %>% 
@@ -415,7 +429,8 @@ test <- system.time({
                             filter(diapause == 1 & active == 0) %>% 
                             nrow()) / nsim
               
-              results <- data.frame(SiteID = cdls[ncdl, "site"], Year = thisyr, cdl_mu, cdl_sd, lambda, voltinism, lost, volt_att, volt_comp, ann_lam)
+              results <- data.frame(SiteID = cdls[ncdl, "site"], Year = thisyr, cdl_mu, cdl_sd, 
+                                    lambda, voltinism, attvoltinism, lost, volt_att, volt_comp, ann_lam)
               
               # results <- data.frame(SiteID = sites$ID[site],
               # Year = thisyr, lambda, voltinism, lost, volt_att, volt_comp, ann_lam)
@@ -432,7 +447,7 @@ stopCluster(cl)
 
 res <- bind_rows(flatten(outlist)) %>% 
   arrange(Year, SiteID)
-# saveRDS(res, "ibm_results_midwest.rds")
+saveRDS(res, "ibm_results_west.rds")
 
 
 # Compare to cohort model results
@@ -550,10 +565,10 @@ abline(0, 1)
 library(ggplot2)
 library(viridis)
 ###############
-res <- readRDS("ibm_results.rds") %>% 
+res <- readRDS("ibm_results_west.rds") %>% 
   filter(SiteID == 123, cdl_sd == .33, lambda == 1.5, Year > 1993)
 
-plt <- ggplot(res, aes(x = cdl_mu, y = voltinism)) +
+plt <- ggplot(res, aes(x = cdl_mu, y = attvoltinism)) +
   geom_point(aes(color = ann_lam)) +
   scale_x_reverse() +
   scale_color_viridis(begin = 0, end = 1) +
@@ -585,7 +600,7 @@ plt <- ggplot(res, aes(x = cdl_mu, y = log(ann_lam), group = lambda, color = lam
   geom_line() +
   scale_x_reverse() +
   scale_color_viridis(begin = 1, end = 0) +
-  facet_wrap(cdl_sd~Year, ncol = 3) +
+  facet_wrap(~Year, ncol = 3) +
   theme_bw() +
   ylab("Log(annual lambda)") +
   xlab("Critical photoperiod") +
@@ -593,8 +608,7 @@ plt <- ggplot(res, aes(x = cdl_mu, y = log(ann_lam), group = lambda, color = lam
 plt
 
 # across years
-res <- readRDS("ibm_results.rds") %>% 
-  filter(SiteID == 193)
+res <- readRDS("ibm_results_west.rds") # %>%  filter(SiteID == 123)
 
 gm_mean = function(x, na.rm=TRUE){
   exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
@@ -602,7 +616,7 @@ gm_mean = function(x, na.rm=TRUE){
 
 geom_lam <- res %>% 
   # filter(Year > 2007) %>% 
-  group_by(cdl_mu, cdl_sd, lambda) %>% 
+  group_by(SiteID, cdl_mu, cdl_sd, lambda) %>% 
   # tidyr::complete(Year, cdl_mu, cdl_sd, lambda, fill = list(ann_lam = 0)) %>% 
   summarise(mean_annual_lambda = gm_mean(ann_lam + 0.001))
 
@@ -618,7 +632,7 @@ plt <- ggplot(geom_lam, aes(x = cdl_mu, y = lambda, fill = log(mean_annual_lambd
 plt
 
 # lines
-plt <- ggplot(geom_lam, aes(x = cdl_mu, y = log(mean_annual_lambda), group = lambda, color = lambda)) +
+plt <- ggplot(geom_lam, aes(x = cdl_mu, y = log(mean_annual_lambda), group = SiteID)) +
   geom_line() +
   scale_x_reverse() +
   scale_color_viridis(begin = 1, end = 0) +
@@ -631,12 +645,15 @@ plt
 
 
 # best cdl combo
-res <- readRDS("ibm_results.rds")
+res <- readRDS("ibm_results_west.rds")
 geom_lam <- res %>% 
+  left_join(maxvolt, by = c("Year" = "year", "SiteID" = "Site")) %>% 
   group_by(SiteID, cdl_mu, cdl_sd, lambda) %>% 
   summarise(mean_annual_lambda = gm_mean(ann_lam + 0.001),
             mean_lost = mean(lost),
-            mean_wvolt = mean(ifelse(is.na(voltinism), 0, voltinism)))
+            mean_wvolt = mean(ifelse(is.na(voltinism), 0, voltinism)),
+            mean_attvolt = mean(attvoltinism),
+            mean_mismatch = mean(attvoltinism - maxgen))
 
 # ggplot(geom_lam, aes(x = mean_annual_lambda)) +
 #   geom_density() +
@@ -659,10 +676,26 @@ best_wvolt <- geom_lam %>%
   arrange(SiteID, cdl_mu) %>% 
   slice(1)
 
+best_avolt <- geom_lam %>% 
+  filter(lambda == 1.5) %>% 
+  group_by(SiteID) %>% 
+  mutate(diffbest = mean_attvolt - max(mean_attvolt)) %>% 
+  filter(diffbest == 0) %>% 
+  arrange(SiteID, cdl_mu) %>% 
+  slice(1)
+
 best_lost <- geom_lam %>% 
   filter(lambda == 1.5) %>% 
   group_by(SiteID) %>% 
   mutate(diffbest = mean_lost - min(mean_lost)) %>% 
+  filter(diffbest == 0) %>% 
+  arrange(SiteID, cdl_mu) %>% 
+  slice(1)
+
+best_mm <- geom_lam %>% 
+  filter(lambda == 1.5) %>% 
+  group_by(SiteID) %>% 
+  mutate(diffbest = abs(mean_mismatch) - min(abs(mean_mismatch))) %>% 
   filter(diffbest == 0) %>% 
   arrange(SiteID, cdl_mu) %>% 
   slice(1)
@@ -693,7 +726,10 @@ site_gdd <- gdd_west %>%
 
 # map
 dat <- left_join(best_cdl, site_gdd, by = c("SiteID" = "Site"))
-summary(lm(cdl_mu ~ scale(mean_accumdd) * scale(lat) * scale(percgdd_early), data = dat))
+
+# # gdd better predictor of cdl than latitude
+# summary(lm(cdl_mu ~ scale(mean_accumdd), data = dat))
+# summary(lm(cdl_mu ~ scale(lat), data = dat))
 
 region <- rgdal::readOGR("./src/ref/ne_50m_admin_1_states_provinces_lakes", 'ne_50m_admin_1_states_provinces_lakes', encoding='UTF-8')
 # region <-spTransform(region, CRS(proj4string(template)))
@@ -704,9 +740,9 @@ theme_set(theme_bw(base_size = 20))
 
 tmpplt <- ggplot() +
   geom_polygon(data = reg.df, aes(x = long, y = lat, group = group), fill = NA, color = "light gray", inherit.aes = FALSE, size = 1, alpha = .3) +
-  # geom_point(data = dat, aes(x = lon, y = lat, color = as.factor(round(mean_wvolt))), alpha = 1, size = 3, inherit.aes = FALSE) +
-  # scale_color_viridis(discrete = TRUE) +
-  geom_point(data = dat, aes(x = lon, y = lat, color = mean_annual_lambda), alpha = 1, size = 3, inherit.aes = FALSE) +
+  # geom_point(data = dat, aes(x = lon, y = lat, color = as.factor(round(mean_attvolt))), alpha = 1, size = 3, inherit.aes = FALSE) +
+  # scale_color_viridis(discrete = TRUE, option = "C") +
+  geom_point(data = dat, aes(x = lon, y = lat, color = cdl_mu), alpha = 1, size = 4, inherit.aes = FALSE) +
   scale_color_viridis(discrete = FALSE) +
   coord_fixed(1.3, xlim = c(-126.5, -119.5), ylim = c(36, 52), expand = FALSE, clip = "on") +
   theme(
