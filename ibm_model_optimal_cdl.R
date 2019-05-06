@@ -90,6 +90,12 @@ udt <- params$stage_udt[1]
 
 # saveRDS(gdd, "lythrum_gdd.rds")
 # Calculate degree days and photoperiod ----
+g1 <- readRDS("ngermany.rds")
+g2 <- readRDS("sgermany.rds")
+gdd_all <- bind_rows(g1,g2) %>% 
+  rename(Year = YEAR, yday = YDAY)
+
+
 gdd <- readRDS("lythrum_gdd.rds")
 
 gdd_all <- gdd %>%
@@ -181,10 +187,17 @@ gdd_west <- gdd_all %>%
 # gdd_midwest <- gdd_all %>%
 #   filter(Longitude > -95 & Longitude < -90)
 
+<<<<<<< HEAD
 sites <- unique(gdd_west$Site)
 cdls <- expand.grid(cdl = seq(12, 17.5, by = .25),
                     cdl_sd = seq(0, .66, length.out = 3),
                     lambda = 1.5, # seq(0.5, 2, by = 0.5),
+=======
+sites <- unique(gdd_all$Site)
+cdls <- expand.grid(cdl = seq(12, 17.5, by = .25),
+                    cdl_sd = seq(0, .66, length.out = 3),
+                    lambda = 1.5, #seq(0.5, 2, by = 0.5),
+>>>>>>> e3a155329f615fd467e278b9e8c5acdc7d9226b7
                     site = sites)
 
 # cdls <- expand.grid(cdl = NA,
@@ -194,10 +207,10 @@ cdls <- expand.grid(cdl = seq(12, 17.5, by = .25),
 
 # startyear <- 2001
 # endyear <- 2005
-startyear <- min(gdd_all$year)
-endyear <- max(gdd_all$year)
+startyear <- min(gdd_all$Year)
+endyear <- max(gdd_all$Year)
 
-ncores <- 40
+ncores <- 4
 cl <- makePSOCKcluster(ncores)
 registerDoParallel(cl)
 
@@ -217,8 +230,13 @@ test <- system.time({
               
               allyrs <- c(startyear:endyear)
               thisyr <- allyrs[y]
+<<<<<<< HEAD
               gdd <- gdd_west %>% 
                 filter(year == thisyr & Site == cdls[ncdl, "site"])
+=======
+              gdd <- gdd_all %>% 
+                filter(Year == thisyr & Site == cdls[ncdl, "site"])
+>>>>>>> e3a155329f615fd467e278b9e8c5acdc7d9226b7
               # filter(year == thisyr & SiteID == sites$ID[site])
               
               set.seed(cdls[ncdl, "site"] * thisyr)
