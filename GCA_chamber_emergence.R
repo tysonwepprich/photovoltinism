@@ -35,6 +35,14 @@ avgemerg <- df %>%
   arrange(meandd)
 avgemerg
 
+cdfemerg <- df %>% 
+  filter(chamber %in% c(1, 4, 5, 6)) %>% 
+  group_by(population, photoperiod) %>% 
+  arrange(population, degdays) %>% 
+  mutate(cumemerg = cumsum(emerged),
+         cumprop = cumemerg / tot_emerged)
+
+
 # plot of each chamber's counts by population
 plt <- ggplot(df, aes(x = degdays, y = emerged, group = population, color = population)) + 
   geom_point() +

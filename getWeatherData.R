@@ -20,8 +20,8 @@ library(ggridges)
 # look at other nearby stations to Inunaki pass (33.675, 130.55)
 # Fritzi collected in Kumamoto prefecture at 747-838m elev (center ~ 32.73, 130.79)
 # Northern population near Lake Toya, Hokkaido (center ~ 42.602851, 140.851949)
-tbar_stations <- nearest_stations(LAT = 54.4,
-                                  LON = 9.4,
+tbar_stations <- nearest_stations(LAT = 50.2,
+                                  LON = 9.2,
                                   distance = 75)
 load(system.file("extdata", "country_list.rda", package = "GSODR"))
 load(system.file("extdata", "isd_history.rda", package = "GSODR"))
@@ -92,15 +92,15 @@ for (yr in years){
 }
 outdf <- bind_rows(outlist) %>% 
   # left_join(stations[, c("STNID", "ELEV_M")]) %>% 
-  mutate(Site = "Meggerdorf") %>% 
+  mutate(Site = "Gelnhausen") %>% 
   group_by(YEAR, YDAY, Site) %>% 
-  summarise(tmax = mean(MAX),
-            tmin = mean(MIN),
+  summarise(tmax = mean(MAX, na.rm = TRUE),
+            tmin = mean(MIN, na.rm = TRUE),
             degday = TriDD(tmax, tmin, 10, 37.8))
 
 
 
-saveRDS(outdf, "ngermany.rds")
+saveRDS(outdf, "sgermany.rds")
 
 
 df1 <- readRDS("sjapan.rds")

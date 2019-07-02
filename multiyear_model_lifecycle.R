@@ -45,7 +45,7 @@ download_daily_weather <- 0 # 1 if you need to download PRISM/Daymet data first 
 # use parallel processing
 # splits raster into chunks for running through simulation
 runparallel <- 1 # 1 for yes, 0 for no
-ncores <- 3 # choose number of cores for parallel
+ncores <- 5 # choose number of cores for parallel
 nchunk <- 1 # not used now, for splitting map if too large for memory
 
 # Pest Specific, Multiple Life Stage Phenology Model Parameters:
@@ -56,7 +56,7 @@ end_doy      <- 365
 region_param <- "NW_SMALL" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
 # if CONUS, wouldn't need to crop PRISM or MACAv2
 species      <- "APHA" # GCA/APHA/DCA
-biotype      <- "N" # TODO: add options for each species, N or S for APHA and GCA
+biotype      <- "S" # TODO: add options for each species, N or S for APHA and GCA
 
 if(weather_data_source == "macav2"){
   # in Kelvin, adjust thresholds/frost or add 273.15 to giant rasters?
@@ -115,10 +115,6 @@ if (weather_data_source == "macav2"){
   tmaxbrick <- shift(tmaxbrick, x = -360)
   
   geo_template <- crop(tminbrick[[1]], REGION)
-  tmin_all <- shift(tmin, x = -360)
-  tmax_all <- shift(tmax, x = -360)
-  
-  geo_template <- crop(tmin_all[[1]], REGION)
   # template <- crop(aggregate(raster(files[1]), fact = 2), REGION)
   geo_template[!is.na(geo_template)] <- 0
 }
@@ -169,7 +165,7 @@ acomb1 <- function(...) abind::abind(..., along = 1)
 
 # 3. Run lifestage model -----
 
-yr <- c(2016:2018)
+yr <- c(2016:2020)
 test <- system.time({
   
   # parallel by yr if MACA 5-year dataset
@@ -184,7 +180,7 @@ test <- system.time({
                        #         .combine = 'acomb1',
                        #         .multicombine = TRUE) %dopar%{
                        
-                       modyear <- yr[y]
+                       modyear <- yr[numyrs]
                        
                        if (weather_data_source == "macav2"){
                          tminfiles <- tminbrick[[which(lubridate::year(as.Date(getZ(tminbrick))) == modyear)]]
@@ -261,8 +257,8 @@ test <- system.time({
                            tmax <- chunk2(getValues(crop(raster(tmaxfiles[index]), geo_template)), nchunk)[[chunk]]
                          }
                          if (weather_data_source == "macav2"){
-                           tmin <- -273.15 + chunk2(getValues(crop(tminfiles[[index]], geo_template)), ncores)[[chunk]]
-                           tmax <- -273.15 + chunk2(getValues(crop(tmaxfiles[[index]], geo_template)), ncores)[[chunk]]
+                           tmin <- -273.15 + chunk2(getValues(crop(tminfiles[[index]], geo_template)), nchunk)[[chunk]]
+                           tmax <- -273.15 + chunk2(getValues(crop(tmaxfiles[[index]], geo_template)), nchunk)[[chunk]]
                          }
                          # frost boundaries to growing season
                          if(doy <= 182){
@@ -395,7 +391,7 @@ stopCluster(cl)
 # 
 # # check results by plotting values assigned to raster
 # # array dimensions: [pixel, week, results]
-plot(setValues(geo_template, outlist[, 53, 5, 1]))
+plot(setValues(geo_template, outlist[, 53, 12, 1]))
 # 
 # # plot time series of lifestage at a single pixel for weighted cohorts
 # plot(outlist[50000, , 1])
@@ -441,7 +437,7 @@ plot(setValues(geo_template, ls_array[, 25, 8]))
 # plot time series of lifestage at a single pixel for weighted cohorts
 plot(outlist[50000, , 1])
 
-saveRDS(outlist, "APHA_output_2016to2018_NWSMALL_N.rds")
+saveRDS(outlist, "APHA_output_2016to2020_NWSMALL_S.rds")
 
 # trying out voltinism quantification
 
