@@ -5,7 +5,7 @@ library(raster)
 library(lubridate)
 library(stringr)
 
-occur <- read.csv("data/edd_loose.csv", header = TRUE, skip = 3)
+occur <- read.csv("data/edd_jap.csv", header = TRUE, skip = 3)
 occur2 <- read.delim("data/gbif_loose.csv", header = TRUE, sep = "\t")
 
 df <- occur %>% 
@@ -41,12 +41,14 @@ reg.df = left_join(reg.points, region@data, by = c("id" = "name_en"))
 theme_set(theme_bw(base_size = 20))
 
 
-tmpplt <- ggplot(data = datcut, aes(x = Longitude, y = Latitude)) +
-  geom_point(alpha = .3, color = "red") +
+tmpplt <- ggplot(data = df, aes(x = Longitude, y = Latitude)) +
+  geom_point(alpha = .2, color = "red") +
   geom_polygon(data = reg.df, aes(x = long, y = lat, group = group), fill = NA, color = "black", inherit.aes = FALSE, size = 1, alpha = .3) +
-  coord_fixed(1.3, xlim = c(-127, -50), ylim = c(25, 55), expand = FALSE, clip = "on")
+  coord_fixed(1.3, xlim = c(-127, -60), ylim = c(24, 55), expand = FALSE, clip = "on") +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
 tmpplt
-
+ggsave("kw_prescence.png",
+       plot = tmpplt, device = "png", width = 10, height = 6, units = "in")
 
 ji <- function(xy, origin=c(0,0), cellsize=c(.75,.75)) {
   t(apply(xy, 1, function(z) cellsize/2+origin+cellsize*(floor((z - origin)/cellsize))))
@@ -86,3 +88,5 @@ datcut <- as.data.frame(datcut[v, ])
 
 outdat <- datcut %>% filter(Latitude < 55, Longitude < -59.5)
 saveRDS(outdat, "lythrum.rds")
+
+outdat <- readRDS("lythrum.rds")
