@@ -67,6 +67,28 @@ plt <- ggplot(df2, aes(x = degdays, y = prop_emerged, group = interaction(popula
   theme(legend.position = c(0.85, 0.2), plot.title = element_text(hjust = 0.5))
 plt
 
+
+
+df3 <- df %>% 
+  filter(chamber >= 4, degdays < 500) %>% 
+  group_by(population, degdays) %>% 
+  summarise(emerged = sum(emerged)) %>% 
+  group_by(population) %>% 
+  arrange(degdays) %>% 
+  mutate(tot_emerged = sum(emerged),
+         cum_emerged = cumsum(emerged),
+         cdf = cum_emerged / tot_emerged)
+  
+  
+plt <- ggplot(df3, aes(x = degdays, y = cdf, group = population, color = population)) +
+  geom_line() +
+  xlab("Accumulated degree-days (10C)") +
+  ylab("Cumulative proportion emerged") +
+  ggtitle("Development time to adult emergence in growth chamber") +
+  theme(legend.position = c(0.8, 0.25), plot.title = element_text(hjust = 0.5))
+plt
+
+  
 # 
 # 
 # # any difference in oviposition date?
