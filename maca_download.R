@@ -30,7 +30,7 @@ tmin <- RCurl::scp("tyson@ento:732",
                          user = "tyson")
 ### 
 
-tmin <- brick("data/maca/macav2metdata_tasmin_IPSL-CM5A-MR_r1i1p1_rcp85_2046_2050_CONUS_daily.nc", 
+tmin <- brick("data/maca/2046/macav2metdata_tasmin_IPSL-CM5A-MR_r1i1p1_rcp85_2046_2050_CONUS_daily.nc", 
               varname = "air_temperature", lvar = 3, level = 4)
 tmax <- brick("data/maca/2046/macav2metdata_tasmax_IPSL-CM5A-MR_r1i1p1_rcp85_2046_2050_CONUS_daily.nc", 
               varname = "air_temperature", lvar = 3, level = 4)
@@ -52,7 +52,7 @@ tmax <- tmax[[1]]
 # easier to adjust insect temperature threshold to kelvin than do extra addition on each raster
 dd <- TriDD(tmax, tmin, LDT = 10 + 273.15, UDT = 37.8 + 273.15)
 
-macafile <- "data/maca/macav2metdata_tasmin_IPSL-CM5A-MR_r1i1p1_rcp85_2046_2050_CONUS_daily.nc"
+macafile <- "data/maca/2046/macav2metdata_tasmin_IPSL-CM5A-MR_r1i1p1_rcp85_2046_2050_CONUS_daily.nc"
 
 
 # Function to split 5-year data into yearly tmin/tmax files for use in lifecycle model
