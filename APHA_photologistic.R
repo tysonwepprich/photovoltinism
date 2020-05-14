@@ -1,13 +1,36 @@
 # Aphalara photoperiod logistic regression
 
 library(ggplot2)
-library(dplyr)
-dat <- read.csv("data/Aphalara_diapause_R.csv")
+library(tidyverse)
+library(broom)
+library(MASS)
+dat <- read.csv("data/Aphalara_diapause_R.csv") %>% 
+  mutate(Total = Repro + Diap,
+         perc_repro = Repro/Total,
+         perc_diap = Diap/Total)
 
-mod0 <- glm(cbind(Diap, Repro) ~ Treat, data = dat, family = binomial(link = "logit"))
-mod1 <- glm(cbind(Diap, Repro) ~ Treat + Pop, data = dat, family = binomial(link = "logit"))
-mod2 <- glm(cbind(Diap, Repro) ~ Treat * Pop, data = dat, family = binomial(link = "logit"))
-AIC(mod0, mod1, mod2)
+mod1 <- glm(perc_repro ~ Treat + Pop, weights = Total, data = dat, family = binomial(link = "probit"))
+mod2 <- glm(perc_repro ~ Treat * Pop, weights = Total, data = dat, family = binomial(link = "probit"))
+car::Anova(mod2, type = 2)
+
+mods <- dat %>% 
+  group_by(Pop) %>% 
+  do(fit = glm(perc_diap ~ Treat, weights = Total, data = ., family = binomial(link = "probit")))
+
+modcoefs <- bind_rows(lapply(mods$fit, FUN = function(x) data.frame(b0 = coef(x)[1], b1 = coef(x)[2]))) %>% 
+  mutate(mods$Pop) %>% 
+  mutate(cp_mean = -b0/b1,
+         cp_sd = 1/abs(b1))
+
+modcps <- bind_rows(lapply(mods$fit, FUN = function(x) {
+  tmp <- MASS::dose.p(x, p = c(.05, .5, .95))
+  data.frame(pred = as.vector(tmp),
+             se = as.vector(attr(tmp, "SE")),
+             p = as.vector(attr(tmp, "p")))
+})) %>% 
+  # mutate(mods$Pop) %>% 
+  pivot_wider(names_from = p, values_from = c(pred, se))
+
 # fakedat <- data.frame(Pop = c("North", "North", "South", "South"),
 #                       Treat = c(12, 17, 12, 17),
 #                       Repro = c(0, 1000, 0, 1000),
@@ -33,11 +56,19 @@ preds <- rbind(predN, predS)
 
 
 # best model has additive Pop by AIC, not interaction or omitted
-mod <- glm(cbind(Diap, Repro) ~ Treat + Pop, data = dat, family = binomial(link = "logit"))
+mod <- glm(cbind(Diap, Repro) ~ Treat + Pop - 1, data = dat, family = binomial(link = "probit"))
 # coefs <- coef(modS)
 pred <- data.frame(Treat = rep(seq(12.5, 16.5, length.out = 100), 2), Pop = c(rep("South", 100), rep("North", 100)))
 pred$pred <- predict(mod, pred, type = "response")      
 
+modcps <- bind_rows(lapply(c(3, 2), FUN = function(x) {
+  tmp <- MASS::dose.p(mod, cf = c(x, 1), p = c(.05, .5, .95))
+  data.frame(pred = as.vector(tmp),
+             se = as.vector(attr(tmp, "SE")),
+             p = as.vector(attr(tmp, "p")))
+})) %>% 
+  mutate(Pop = c(rep("S", 3), rep("N", 3))) %>%
+  pivot_wider(names_from = p, values_from = c(pred, se))
 
 
 plt <- ggplot(dat, aes(x = Treat, y = fraction, group = Pop, color = Pop)) +

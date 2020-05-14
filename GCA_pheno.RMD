@@ -45,7 +45,7 @@ Cond=function(condition, trueValue, falseValue){
 I extracted data from "Galerucella phenology 7-30-13.csv" for 4 sites in 2009 and 2013. Cumulative degree-days (10C/37.8C) are from nearby weather stations using uspest.org.
 
 ```{r data}
-dat <- read.csv("GCA_pheno_2013.csv", header = TRUE)
+dat <- read.csv("data/GCA_pheno_2013.csv", header = TRUE)
 dat$Date <- mdy(dat$Date)
 dat <- dat %>% 
   group_by(Site, Stage) %>% 
@@ -396,11 +396,26 @@ tmax <- tmax %>%
          Date = ymd(DATE),
          Year = year(Date),
          tmax = TX / 10)
+
+temps <- left_join(tmin, tmax, by = c("Site", "Date", "Year")) %>% 
+  dplyr::select(Site, Date, Year, tmin, tmax) %>% 
+  filter(Year == 1990) %>% 
+  mutate(DOY = yday(Date),
+         DD = TriDD(tmax, tmin, 10, 37.8)) %>% 
+  arrange(DOY) %>% 
+  mutate(AccumDD = cumsum(DD))
+
+# Greenhouse temperatures said to be Ambient, but much higher than weather station
+daytemp <- expdat %>% 
+  filter(Variable == "Temperature") %>% 
+  left_join(temps, by = c("DOY", "Year"))
+
+
 fig6temp <- left_join(tmin, tmax, by = c("Site", "Date", "Year")) %>% 
   dplyr::select(Site, Date, Year, tmin, tmax) %>% 
   filter(Year %in% c(1988, 1990)) %>% 
   mutate(DOY = yday(Date),
-         DD = TriDD(tmax, tmin, 10, 37.8)) %>% 
+         DD = TriDD(tmax, tmin, 12.2, 30)) %>% 
   group_by(Year) %>% 
   arrange(DOY) %>% 
   mutate(AccumDD = cumsum(DD))
@@ -439,6 +454,32 @@ plt <- ggplot(fig6dat, aes(x = AccumDD, y = FakeCount)) +
   # theme_bw()
 plt
   
+
+
+
+
+# Pre-oviposition and oviposition period of F1 adults
+fig9 <- read.csv("data/BlosseyFigure9.csv", header = TRUE) %>% 
+  mutate(Date = mdy(Date),
+         Year = 1990,
+         DOY = yday(Date))
+fig9temp <- left_join(tmin, tmax, by = c("Site", "Date", "Year")) %>% 
+  dplyr::select(Site, Date, Year, tmin, tmax) %>% 
+  filter(Year == 1990) %>% 
+  mutate(DOY = yday(Date),
+         DD = TriDD(tmax, tmin, 15, 30)) %>% 
+  group_by(Year) %>% 
+  arrange(DOY) %>% 
+  mutate(AccumDD = cumsum(DD))
+fig9dat <- fig9 %>% 
+  left_join(fig9temp, by = c("Year", "DOY", "Date"))
+
+plt <- ggplot(fig9dat, aes(x = AccumDD, y = EggPerDay)) + 
+  geom_point() +
+  # geom_path(data = preddat) +
+  ggtitle("Blossey F1 oviposition")
+  # theme_bw()
+plt
 ```
 
 

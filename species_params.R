@@ -11,7 +11,7 @@ species_params <- function(mod_type, species, biotype, nsim, model_CDL, dd_sd){
     # need to match length and order of stgorder
     # Could add biotype differences here if needed
     stage_ldt <- rep(10, 6)
-    stage_udt <- rep(37.8, 6)
+    stage_udt <- rep(30, 6)
     stage_dd  <- c(167.6, 93.3, 136.4, 137.7, 125, 10)
     
     # diapause response to photoperiod
@@ -94,8 +94,8 @@ species_params <- function(mod_type, species, biotype, nsim, model_CDL, dd_sd){
     
     # Take distribution and calculate substages for oviposition distribution
     # TRY 1 with normal truncated at beginning of season
-    arg1 = list(mu = 275, sigma2 = 1000)
-    xdist = seq(150, 450, length.out = 1000)
+    arg1 = list(mu = 200, sigma2 = 1000)
+    xdist = seq(120, 350, length.out = 1000)
     ydist = dnorm(xdist, mean = arg1$mu, sd = sqrt(arg1$sigma2))
     
     # plot(xdist, ydist)

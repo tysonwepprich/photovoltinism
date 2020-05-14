@@ -71,7 +71,7 @@ ldt <- params$stage_ldt[1]
 udt <- params$stage_udt[1]
 
 # Download weather data ----
-gddsites <- sites[3,]
+gddsites <- sites
 siteslist <- list()
 for(i in 1:nrow(gddsites)){
   temp <- download_daymet(site = gddsites$ID[i], lat = gddsites$y[i], lon = gddsites$x[i],
@@ -81,14 +81,14 @@ for(i in 1:nrow(gddsites)){
   #                         start = startyear, end = endyear, internal = TRUE,
   #                         silent = TRUE, force = FALSE)
   outdf <- temp$data %>%
-    mutate(elev = temp$altitude)
+    mutate(elev = temp$altitude,
+           Site = gddsites$ID[i],
+           Latitude = gddsites$y[i],
+           Longitude = gddsites$x[i])
   siteslist[[i]] <- outdf
 }
 
-gdd <- bind_rows(siteslist) %>% 
-  mutate(Site = gddsites$ID,
-         Latitude = gddsites$y,
-         Longitude = gddsites$x)
+gdd <- bind_rows(siteslist)
 
 # Calculate degree days and photoperiod ----
 
@@ -690,5 +690,22 @@ ggsave(plot = p5, filename =  "gca_yak_sim_14.2.png", device = "png", width = 8,
 
 
 
+theme_set(theme_bw(base_size = 12)) 
 
+gdd_all$Site <- factor(gdd_all$Site, levels = levels(gdd_all$Site)[c(1,6,4,5,2,3)])
+
+
+plt <- ggplot(gdd_all, aes(x = accumdegday, y = daylength, group = as.factor(year), color = as.factor(year))) +
+  geom_line(size = 1, color = "black", alpha = .2) +
+  # coord_cartesian(xlim = c(-50, maxgdd + 100), ylim = c(minphoto - .5, 17.2), expand = FALSE) +
+  # scale_color_viridis(discrete = TRUE, name = "Year", option = "D") +
+  scale_y_continuous(breaks = c(9:17)) +
+  guides(color = guide_legend(reverse=FALSE)) +
+  xlab("Accumulated degree-days") +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = "none") +
+  ylab("Daylength (hours)") +
+  facet_wrap(.~Site, ncol = 2)
+plt
 

@@ -49,7 +49,7 @@ dat$zlat <- as.numeric(zlat[, 1])
 mod <- glmer(perc_repro ~ zday + year + (1|rowid), weights = total, data = dat, family = binomial)
 mod1 <- glmer(perc_repro ~ (zday + zlat + zyear)^2 + (1 + zday|site), weights = total, data = dat, family = binomial)
 mod2 <- glmer(perc_repro ~ zday + zlat + zday:zlat + (1 + zday|site), weights = total, data = dat, family = binomial)
-mod3 <- glmer(perc_repro ~ (photoperiod + lat + year)^2 + (1|site), weights = total, data = dat, family = binomial)
+mod3 <- glmer(perc_repro ~ (photoperiod + zlat + zyear)^2 + (1|site), weights = total, data = dat, family = binomial)
 
 summary(mod)
 AIC(mod1, mod2, mod3)
@@ -58,16 +58,16 @@ AIC(mod1, mod2, mod3)
 tab_model(mod2, file = "allsite_glmer.html", show.r2 = FALSE, show.icc = FALSE)
 
 # model predictions for plotting
-newdat <- expand.grid(list(zday = seq(-2.5, 2.5, length.out = 100),
+newdat <- expand.grid(list(zday = seq(-2.5, 1.5, length.out = 500),
                            zyear = unique(dat$zyear),
                            site = unique(dat$site)))
 uniqdat <- dat %>% 
-  dplyr::select(site, zlat, lat) %>% 
+  dplyr::select(site, zlat, lat, year, zyear) %>% 
   distinct()
 
-newdat <- left_join(newdat, uniqdat)
+newdat <- right_join(newdat, uniqdat)
 
-newdat$pred <- predict(mod2, newdat, type = "response")
+newdat$pred <- predict(mod1, newdat, type = "response")
 # back transform zday to photoperiod
 newdat$photoperiod <- newdat$zday * attr(zday, 'scaled:scale') + attr(zday, 'scaled:center')
 newdat$year <- newdat$zyear * attr(zyear, 'scaled:scale') + attr(zyear, 'scaled:center')
@@ -77,7 +77,7 @@ newdat$lat <- newdat$zlat * attr(zlat, 'scaled:scale') + attr(zlat, 'scaled:cent
 newdat$sitelat <- as.factor(paste(newdat$site, round(newdat$lat, 1), sep = ": "))
 
 cdl <- newdat %>% 
-  group_by(site, sitelat) %>% 
+  group_by(site, lat, sitelat, year) %>% 
   summarise(cdl = as.numeric(photoperiod[which.min(abs(pred - .5))]))
 
 cdl$sitelat <- factor(cdl$sitelat, levels = cdl$sitelat[order(cdl$cdl, decreasing = TRUE)])
@@ -162,9 +162,9 @@ uniqdat$cdl_b1 <- cdl_b1
 plt <- ggplot(dat, aes(x = photoperiod, y = perc_repro)) +
   geom_point(aes(shape = as.factor(year)), alpha = .5, size = 1.6) +
   scale_shape_discrete(name = "Year") +
-  geom_line(data = newdat, aes(x = photoperiod, y = pred, color = lat), size = 1.5, alpha = .5) +
+  geom_line(data = newdat, aes(x = photoperiod, y = pred, color = lat, group = as.factor(year)), size = 1.5, alpha = .5) +
   scale_color_viridis(discrete = FALSE, name = "Latitude") +
-  facet_wrap(~sitelat, ncol = 3) +
+  facet_wrap(~site, ncol = 3) +
   geom_text(data = cdl, aes(x = cdl + .3, y = .1, label = round(cdl,1))) +
   geom_vline(data = cdl, aes(xintercept = cdl)) +
   xlab("Hours of light in chamber") +
@@ -265,10 +265,12 @@ mp <- ggplot(data = sites, aes(x = lon, y = lat)) +
   geom_point() +
   geom_label_repel(aes(label = site)) +
   geom_polygon(data = states, aes(x = x, y = y, group = group), fill = NA, color = "black", size = .1) +
-  coord_fixed(1.3) 
+  coord_fixed(1.3) +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank())
 mp
 
-ggsave("DCA_sitemap.png",
+ggsave("DCA_sitemap2.png",
        plot = mp, device = "png", width = 9, height = 9, units = "in")
 
 
