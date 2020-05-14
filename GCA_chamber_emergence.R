@@ -79,7 +79,6 @@ plt
 
 
 
-
 # Pop x photo interaction ----
 
 df <- dat %>% 
@@ -233,7 +232,4 @@ fit.beta <- fitdist(df.expanded$days, "lognormal", method = "mme")
 plt <- ggplot(df.expanded, aes(x = population, y = days)) +
   geom_histogram()
 plt
-
-
-
 
