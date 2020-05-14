@@ -21,19 +21,20 @@ source('CDL_funcs.R')
 source('species_params.R')
 
 # 2. User input -----
-dat <- readRDS("APHA_output_2016to2018_NWSMALL_N.rds")
+dat <- readRDS("APHA_output_2016to2020_NWSMALL_S.rds")
 yr <- 2016
 
+weather_path <- "data/maca/2016"
 # weather_path <- "/home/macav2metdata/IPSL_rcp85/"
-weather_path <- "data/PRISM" # PRISM data on grub server (needs to have stable files downloaded)
-# weather_data_source <- "macav2" # could also have daymet or macav2
-weather_data_source <- "prism"
+# weather_path <- "data/PRISM" # PRISM data on grub server (needs to have stable files downloaded)
+weather_data_source <- "macav2" # could also have daymet or macav2
+# weather_data_source <- "prism"
 
 
 region_param <- "NW_SMALL" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
 # if CONUS, wouldn't need to crop PRISM or MACAv2
 species      <- "APHA" # GCA/APHA/DCA
-biotype      <- "N" # TODO: add options for each species, N or S for APHA and GCA
+biotype      <- "S" # TODO: add options for each species, N or S for APHA and GCA
 
 if(weather_data_source == "macav2"){
   # in Kelvin, adjust thresholds/frost or add 273.15 to giant rasters?
@@ -111,10 +112,10 @@ reg.df = left_join(reg.points, region@data, by = c("id" = "name_en"))
 
 
 # summarise years of MACA simulations
-br <- brick(replicate(3, template))
+br <- brick(replicate(5, template))
 potential <- attempt <- mismatch <- diapause <- gdd <- br
 
-for (y in 1:3){
+for (y in 1:5){
   attem <- setValues(br, dat[, , 6, y])
   poten <- setValues(br, dat[, , 7, y])
   weivolt <- setValues(br, dat[, , 8, y])
@@ -190,7 +191,7 @@ if (map_type == "diapause"){
     pltsub <- paste(min(yr), "to", max(yr), "mean", sep = " ")
     
   }else{
-    plttitle <- paste(species, map_type, "voltinism with photoperiodic cue", sep = " ")
+    plttitle <- paste(species, biotype, "strain\n", map_type, "voltinism with photoperiodic cue", sep = " ")
     pltsub <- paste(min(yr), "to", max(yr), "mean", sep = " ")
   }
 }
@@ -208,10 +209,10 @@ names(df)[3] <- "Voltinism"
 
 # DISCRETE OR CONTINUOUS COLOR SCALE?
 # discrete voltinism classes for visual
-df$Voltinism <- round(df$Voltinism)
+df$Voltinism <- round(df$Voltinism * 2)/2
 maxvolt <- max(df$Voltinism, na.rm = TRUE)
 minvolt <- min(df$Voltinism, na.rm = TRUE)
-df$Voltinism <- factor(df$Voltinism, levels = c(minvolt:maxvolt))
+df$Voltinism <- factor(df$Voltinism, levels = c(seq(minvolt, maxvolt, by = 0.5)))
 # change levels manually as desired
 # levels(df$Voltinism) <- c(levels(df$Voltinism)[1:6], rep("6+", 2))
 df <- df %>% 
@@ -230,16 +231,16 @@ df <- df %>%
 # brewer only does discrete classes
 pts <- data.frame(x = -123.2326, y = 44.8478)
 
-theme_set(theme_void(base_size = 20))
+theme_set(theme_void(base_size = 14))
 tmpplt <- ggplot(data = df, aes(x, y, fill = Voltinism)) +
   geom_raster() +
   geom_polygon(data = reg.df, aes(x = long, y = lat, group = group), fill = NA, color = "black", inherit.aes = FALSE, size = 1) +
   # scale_fill_viridis(breaks = seq(0, 7, by = 1), name = ifelse(map_type == "diapause", "% Diapause",  "Generations"), na.value = "white", begin = 0, end = ifelse(map_type == "diapause", 1, maxvolt/7), discrete = ifelse(map_type == "diapause", FALSE, TRUE)) +
   # scale_fill_gradient2(low=muted("red"), high=muted("blue"), midpoint = 0) +
-  scale_fill_viridis(na.value = "white", begin = 0, end = maxvolt / 3.58) +
+  scale_fill_viridis(na.value = "white", begin = 0, end = 1, discrete = TRUE) +
   # scale_fill_brewer(guide = guide_legend(reverse = TRUE), type = "div", palette = "RdBu") +
-  geom_point(data = pts, aes(x, y), inherit.aes = FALSE, size = 2) +
-  # ggtitle(plttitle, subtitle = pltsub) +
+  # geom_point(data = pts, aes(x, y), inherit.aes = FALSE, size = 2) +
+  ggtitle(plttitle, subtitle = pltsub) +
   coord_fixed(1.3, xlim = c(min(df$x), max(df$x)), ylim = c(min(df$y), max(df$y)), expand = FALSE, clip = "on") +
   theme(plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
 tmpplt
