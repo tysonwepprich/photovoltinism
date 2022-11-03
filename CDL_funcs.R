@@ -58,7 +58,22 @@ TriDD=function(tmax, tmin, LDT, UDT){
 } 
 
 
-
+# Single triangle with upper threshold, vertical cutoff 
+# also a good substitution for the single sine method
+TriDDvert <- function(tmax, tmin, LDT, UDT) {
+  tmax <- Cond(tmax == tmin, tmax + 0.01, tmax)
+  Tmp1 = 6*((tmax - LDT)*(tmax - LDT))/(tmax - tmin)
+  Tmp2 = 6*((tmax - UDT)*(tmax - UDT))/(tmax - tmin)
+  Cutoff = (tmax - UDT)*(UDT-LDT)/(tmax - tmin)
+  Cond(tmax < LDT, 0,
+       Cond(tmin >= UDT, 0, # no development due to vert cutoff
+            Cond((tmax < UDT) & (tmin <= LDT), Tmp1/12, # no vert cutoff
+                 Cond((tmin <= LDT) & (tmax >= UDT), (Tmp1 - Tmp2)/12 - Cutoff,
+                      Cond((tmin > LDT) & (tmax >= UDT), 
+                           6*(tmax + tmin - 2*LDT)/12 - (Tmp2/12) - Cutoff,
+                           Cond((tmin > LDT) & (tmax < UDT), # no vert cutoff
+                                6*(tmax + tmin - 2*LDT)/12,0))))))
+} 
 
 # photoperiod functions
 

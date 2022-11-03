@@ -1,7 +1,8 @@
 # Parameters for optimal CP paper
 
 source("CDL_funcs.R")
-library(tidyverse)
+library(dplyr)
+library(ggplot2)
 library(lubridate)
 
 theme_set(theme_bw(base_size = 18) +

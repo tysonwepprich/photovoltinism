@@ -20,6 +20,7 @@ library(ggridges)
 # look at other nearby stations to Inunaki pass (33.675, 130.55)
 # Fritzi collected in Kumamoto prefecture at 747-838m elev (center ~ 32.73, 130.79)
 # Northern population near Lake Toya, Hokkaido (center ~ 42.602851, 140.851949)
+# New biotype for Europe from Murakami (38.2, 139.5)
 tbar_stations <- nearest_stations(LAT = 50.2,
                                   LON = 9.2,
                                   distance = 75)

@@ -1,6 +1,6 @@
 # biocontrol species parameters
 # to source for model_lifecycle.R
-species_params <- function(mod_type, species, biotype, nsim, model_CDL, dd_sd){
+species_params <- function(species, biotype, nsim, model_CDL){
   
   # Galerucella calmariensis ----
   if (species == "GCA"){
@@ -11,7 +11,7 @@ species_params <- function(mod_type, species, biotype, nsim, model_CDL, dd_sd){
     # need to match length and order of stgorder
     # Could add biotype differences here if needed
     stage_ldt <- rep(10, 6)
-    stage_udt <- rep(30, 6)
+    stage_udt <- rep(37.8, 6)
     stage_dd  <- c(167.6, 93.3, 136.4, 137.7, 125, 10)
     
     # diapause response to photoperiod
@@ -58,7 +58,7 @@ species_params <- function(mod_type, species, biotype, nsim, model_CDL, dd_sd){
     # need to match length and order of stgorder
     # Could add biotype differences here if needed
     stage_ldt <- rep(11.1, 5)
-    stage_udt <- rep(40, 5)
+    stage_udt <- rep(36.7, 5)
     stage_dd  <- c(275, 95, 186, 188, 51)
     
     # diapause response to photoperiod
@@ -94,8 +94,8 @@ species_params <- function(mod_type, species, biotype, nsim, model_CDL, dd_sd){
     
     # Take distribution and calculate substages for oviposition distribution
     # TRY 1 with normal truncated at beginning of season
-    arg1 = list(mu = 200, sigma2 = 1000)
-    xdist = seq(120, 350, length.out = 1000)
+    arg1 = list(mu = 275, sigma2 = 1000)
+    xdist = seq(150, 450, length.out = 1000)
     ydist = dnorm(xdist, mean = arg1$mu, sd = sqrt(arg1$sigma2))
     
     # plot(xdist, ydist)
@@ -145,62 +145,29 @@ species_params <- function(mod_type, species, biotype, nsim, model_CDL, dd_sd){
     # TODO: empirical distribution from data
   } # end APHA 
   
+  # for any species
+  # output parameter file with
+  # substages and photoperiod response
+  inputdist <- data.frame(x = xdist, y = ydist) %>% 
+    arrange(x) %>% 
+    mutate(CDF = cumsum(y/sum(y)))
+  substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .99)
   
-  if (mod_type == "cohort"){
-    # for any species
-    # output parameter file with
-    # substages and photoperiod response
-    inputdist <- data.frame(x = xdist, y = ydist) %>% 
-      arrange(x) %>% 
-      mutate(CDF = cumsum(y/sum(y)))
-    substages <- SubstageDistrib(dist = inputdist, numstage = nsim, perc = .999)
-    
-    # parameters of required degree-days and coefficients of photoperiod response model
-    if (nsim == 1){
-      ddpar <- matrix(stage_dd, nrow = 1, byrow = TRUE)
-    }else{
-      ddpar <- cbind(substages$means, matrix(rep(stage_dd[-1], nrow(substages)), nrow = nrow(substages), byrow = TRUE))
-    }
-    
-    params <- list(
-      stgorder = stgorder,
-      relpopsize = substages$weights,
-      stage_dd = ddpar,
-      stage_ldt = stage_ldt,
-      stage_udt = stage_udt,
-      photo_sens = photo_sens,
-      CDL = coefs)
-    
-    return(params)
+  # parameters of required degree-days and coefficients of photoperiod response model
+  if (nsim == 1){
+    ddpar <- matrix(stage_dd, nrow = 1, byrow = TRUE)
+  }else{
+    ddpar <- cbind(substages$means, matrix(rep(stage_dd[-1], nrow(substages)), nrow = nrow(substages), byrow = TRUE))
   }
   
+  params <- list(
+    stgorder = stgorder,
+    relpopsize = substages$weights,
+    stage_dd = ddpar,
+    stage_ldt = stage_ldt,
+    stage_udt = stage_udt,
+    photo_sens = photo_sens,
+    CDL = coefs)
   
-  if(mod_type == "ibm"){
-    
-    # for any species
-    # output parameter file with
-    emerg <- base::sample(xdist, size = nsim, prob = ydist, replace = TRUE)
-    
-    # parameters of required degree-days and coefficients of photoperiod response model
-    if (nsim == 1){
-      ddpar <- matrix(stage_dd, nrow = 1, byrow = TRUE)
-    }else{
-      ddpar <- cbind(emerg, matrix(rep(stage_dd[-1], nsim), nrow = nsim, byrow = TRUE))
-    }
-    
-    if(dd_sd > 0){
-      ddpar[, 2:ncol(ddpar)] <- apply(ddpar[, 2:ncol(ddpar)], MARGIN = 2, FUN = function(x){rnorm(length(x), mean = mean(x), sd = dd_sd * mean(x) / 100)})
-    }
-    
-    params <- list(
-      stgorder = stgorder,
-      stage_dd = ddpar,
-      stage_ldt = stage_ldt,
-      stage_udt = stage_udt,
-      photo_sens = photo_sens,
-      CDL = coefs)
-    
-    return(params)
-    
-  }
+  return(params)
 }

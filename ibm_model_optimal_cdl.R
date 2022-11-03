@@ -7,9 +7,9 @@
 # 1. Setup -------
 # packages, options, functions loaded
 # TODO: find ways to take out dplyr, purrr, mixsmsn functions?
-pkgs <- c("sp", "rgdal", "rgeos", "raster", "lubridate", "mixsmsn", "dplyr", "daymetr",
+pkgs <- c("sp", "rgdal", "rgeos", "raster", "lubridate", "mixsmsn", "daymetr",
           "stringr", "prism", "purrr", "foreach", "doParallel", "abind", "ncdf4",
-          "ggplot2", "fGarch", "tidyr")
+          "ggplot2", "dplyr", "tidyr")
 # install.packages(pkgs) # install if needed
 inst = lapply(pkgs, library, character.only = TRUE) # load them
 
@@ -21,26 +21,31 @@ source('species_params_ibm.R')
 
 # Pest Specific, Multiple Life Stage Phenology Model Parameters:
 # model scope
-yr           <- 2018
+# yr           <- 2018
 start_doy    <- 1
 end_doy      <- 365
 # region_param <- "WEST" # TEST/WEST/EAST/CONUS/SOUTHWEST/NORTHWEST
 species      <- "GCA" # GCA/APHA/DCA
-biotype      <- "S" # TODO: add options for each species, N or S for APHA and GCA
+biotype      <- "Delta" # TODO: add options for each species, N or S for APHA and GCA
 
-nsim <- 1000
-# lambda <- 1.1
+nsim <- 100
 
 # lat <- 43.39
 # lon <- -123.35
 startyear <- 1992
-endyear <- 2017
+endyear <- 2018
 # site <- "Sutherlin"
 
 
-# Load sites
-sites <- read.csv("GCA_sitecoord.csv", header = TRUE)
-names(sites) <- c("ID", "x", "y") #### CHECK THIS
+# Load sites DCA
+sites <- read.csv("data/DCA_sitecoords.csv", header = TRUE)[,c(2, 4, 5)]
+names(sites) <- c("ID", "y", "x") #### CHECK THIS
+sites <- sites[-which(sites$ID %in% c("Pueblo, CO", "Artesia, NM")), ]
+# Load sites GCA
+sites <- read.csv("data/GCA_modeling_sites.csv", header = TRUE) [c(4, 21, 22),]
+# names(sites) <- c("ID", "y", "x") #### CHECK THIS
+
+
 
 # REGION <- assign_extent(region_param = region_param)
 
@@ -65,25 +70,14 @@ for(i in 1:nrow(sites)){
                           silent = TRUE, force = FALSE)
   outdf <- temp$data %>%
     mutate(elev = temp$altitude,
-           Site = gddsites$ID[i],
-           Latitude = gddsites$y[i],
-           Longitude = gddsites$x[i])
+           Site = sites$ID[i],
+           Latitude = sites$y[i],
+           Longitude = sites$x[i])
   siteslist[[i]] <- outdf
 }
 
 gdd <- bind_rows(siteslist)
 
-# summarise sites
-sitesumm <- gdd %>% 
-  group_by(Site) %>% 
-  summarise(meanTmax = mean(tmax..deg.c.),
-            meanTmin = mean(tmin..deg.c.),
-            meanPrec = mean(prcp..mm.day.) * 365 / 10,
-            elevation = elev[1],
-            latitude = Latitude[1],
-            longitude = Longitude[1]) %>% 
-  arrange(-latitude)
-write.csv(sitesumm, "site_summ.csv")
 
 # Calculate degree days and photoperiod ----
 
@@ -98,12 +92,14 @@ gdd_all <- gdd %>%
   dplyr::filter(yday <= end_doy & yday >= start_doy) %>%
   rowwise() %>%
   mutate(degdayOLD = TriDD(tmax..deg.c., tmin..deg.c., ldt, udt),
+         degdayVERT = TriDDvert(tmax..deg.c., tmin..deg.c., ldt, udt),
          degdayTRI = degree_days(tmin..deg.c., tmax..deg.c., ldt, udt, method = "single.triangulation"),
          degday = degree_days(tmin..deg.c., tmax..deg.c., ldt, udt, method = "single.sine")) %>%
   ungroup() %>%
   group_by(Site, year) %>%
   arrange(yday) %>%
   mutate(accumdegdayOLD = cumsum(degdayOLD),
+         accumdegdayVERT = cumsum(degdayVERT),
          accumdegdayTRI = cumsum(degdayTRI),
          accumdegday = cumsum(degday),
          daylength = photoperiod(Latitude, yday),
@@ -111,11 +107,13 @@ gdd_all <- gdd %>%
          lightfrost = tmin..deg.c. <= 0,
          hardfrost = tmin..deg.c. <= -2)
 
-gdd_all$Site <- plyr::revalue(gdd_all$Site, c("Yakima Training Center, WA"="Vantage, WA", 
-                                              "Baskett Slough, OR"="Rickreall, OR"))
-gdd_all$Site <- factor(gdd_all$Site, levels = c("Bellingham, WA", "Vantage, WA", "Rickreall, OR",
-                                                "Sutherlin, OR", "McArthur, CA", "Palermo, CA"))
+# try out vertical cutoff
+gdd_all <- gdd_all %>% 
+  mutate(degday = degdayVERT,
+         accumdegday = accumdegdayVERT)
 
+
+# Summarize sites' seasons----
 # season length
 gdd_seas <- gdd_all %>% 
   group_by(Site, year) %>% 
@@ -133,17 +131,30 @@ gdd_seas <- gdd_all %>%
   group_by(Site) %>% 
   summarise_all(.funs = list(mean, sd), na.rm = TRUE)
   
-write.csv(gdd_seas, "gdd_seas.csv")  
+write.csv(gdd_seas, "gdd_seas_DCA.csv")  
 
 tapply(gdd_all$daylength, gdd_all$Site, FUN = max)  
+
+# summarise sites
+sitesumm <- gdd %>% 
+  group_by(Site) %>% 
+  summarise(meanTmax = mean(tmax..deg.c.),
+            meanTmin = mean(tmin..deg.c.),
+            meanPrec = mean(prcp..mm.day.) * 365 / 10,
+            elevation = elev[1],
+            latitude = Latitude[1],
+            longitude = Longitude[1]) %>% 
+  arrange(-latitude)
+write.csv(sitesumm, "site_summ.csv")
 
 
 # naive max voltinism by gdd alone
 ow_dd <- params$stage_dd[,1]
 gen_dd <- rowSums(params$stage_dd[,-1])
 
+# calculated in different ways, average away individual variation or not?
 maxvolt <- gdd_all %>% 
-  filter_all(all_vars(!is.na(.)))  %>% 
+  dplyr::filter_all(all_vars(!is.na(.)))  %>% 
   group_by(Site, year) %>% 
   arrange(yday) %>%
   mutate(nday = n(),
@@ -152,13 +163,13 @@ maxvolt <- gdd_all %>%
          nday > 350) %>% 
   summarise(maxgen = floor((accumdegday - mean(ow_dd)) / mean(gen_dd)))
 
-
-maxvolt <- gdd_all %>% 
-  dplyr::filter(yday == 365) %>% 
+# Non-integer output of maxgen accounting for ind. variation
+maxvolt <- gdd_all %>%
+  dplyr::filter(yday == 365) %>%
   summarise(maxgen = mean(floor((accumdegday - ow_dd) / gen_dd)),
             accumdegday = accumdegday)
 
-# Voltinism by degree-days (constant)
+# Plot: Voltinism by degree-days (constant) ----
 # example years 2011,13,15 for cool to warm
 # G&C2015 uses 100dd OW ovip, 497 1st gen, 523 subsequent adult emergence
 
@@ -167,20 +178,20 @@ expand_df <- function(df){
     mutate(ddreq = median(ow_dd) + gen * median(gen_dd)) %>% 
     rowwise() %>% 
     mutate(accumdegday = gdd_all %>% 
-             filter(Site == df$Site[1] & year == df$year[1]) %>% 
-             filter(accumdegday - ddreq[1] >= 0) %>% 
+             dplyr::filter(Site == df$Site[1] & year == df$year[1]) %>% 
+             dplyr::filter(accumdegday - ddreq[1] >= 0) %>% 
              arrange(yday) %>% 
              slice(1) %>% pull(accumdegday),
            yday = gdd_all %>% 
-             filter(Site == df$Site[1] & year == df$year[1]) %>% 
-             filter(accumdegday - ddreq[1] >= 0) %>% 
+             dplyr::filter(Site == df$Site[1] & year == df$year[1]) %>% 
+             dplyr::filter(accumdegday - ddreq[1] >= 0) %>% 
              arrange(yday) %>% 
              slice(1) %>% pull(yday))
   return(newdf)
 }
 
 milestones <- maxvolt %>% 
-  filter(year %in% c(2011, 2013, 2015)) %>% 
+  dplyr::filter(year %in% c(2011, 2013, 2015)) %>% 
   group_by(Site, year) %>% 
   do(expand_df(.))
 milestones$year <- as.character(milestones$year)
@@ -189,7 +200,7 @@ milestones$date <- as.Date(milestones$yday, origin=as.Date("2015-12-31"))
 
 
 
-dds <- gdd_all %>% filter(year %in% c(2011, 2013, 2015)) %>% 
+dds <- gdd_all %>% dplyr::filter(year %in% c(2011, 2013, 2015)) %>% 
                             mutate(date = as.Date(yday, origin=as.Date("2015-12-31")))
 dds$year <- as.character(dds$year)
 
@@ -218,14 +229,14 @@ plt
 # saved at 850x700 pixels
 
 
-# Voltinism by photothermograph (constant)
+# Plot: Voltinism by photothermograph (constant)----
 # add photosensitive time to milestones
 cdl <- 15
 expand_df <- function(df){
   cycle <- "reproduce"
   newdf <- data.frame(gen = 1, start = median(ow_dd), end = median(ow_dd) + 1 * median(gen_dd),
                       sense = median(ow_dd) + 1 * median(gen_dd) - median(rowSums(params$stage_dd[,c(5:6)]))) %>% 
-    mutate(daylength = df %>% filter(accumdegday - sense >= 0) %>% 
+    mutate(daylength = df %>% dplyr::filter(accumdegday - sense >= 0) %>% 
              arrange(yday) %>% 
              slice(1) %>% pull(daylength),
            choice = ifelse(daylength < cdl, "diapause", "reproduce"))
@@ -237,7 +248,7 @@ expand_df <- function(df){
                end = end + median(gen_dd),
                sense = sense + median(gen_dd),
                daylength = ifelse(sense < max(df$accumdegday),
-                                  df %>% filter(accumdegday - sense >= 0) %>% 
+                                  df %>% dplyr::filter(accumdegday - sense >= 0) %>% 
                  arrange(yday) %>% 
                  slice(1) %>% pull(daylength), NA),
                choice = ifelse(daylength < cdl, "diapause", "reproduce"))
@@ -351,17 +362,28 @@ plt
 
 # 3. Run lifestage model -----
 
-sites <- unique(gdd_all$Site)
-cdls <- expand.grid(cdl = seq(12, 18, by = .25),
-                    cdl_sd = seq(0, 2.5, by = .25),
-                    lambda = seq(1, 3, by = 1),
-                    site = sites)
+testsites <- unique(gdd_all$Site)
+cdls <- expand.grid(cdl = seq(10, 20, by = .25),
+                    cdl_sd = seq(0, 1.5, by = .25),
+                    lambda = c(2),
+                    site = testsites)
+# cdls <- expand.grid(cdl = seq(12, 18, by = 1),
+                    # cdl_sd = 1,
+                    # lambda = 2,
+                    # site = testsites)
+
+
+# Run choice sites/years
+inc_sites <- c("Bellingham, WA", "Sutherlin, OR", "Palermo, CA")
+cdls <- cdls %>% 
+  filter(site %in% inc_sites, lambda == 1.5, cdl_sd == .5, cdl == 15)
 
 startyear <- min(gdd_all$year)
 endyear <- max(gdd_all$year)
+startyear <- 2011
+endyear <- 2015
 
-
-ncores <- 40
+ncores <- 20
 cl <- makePSOCKcluster(ncores)
 registerDoParallel(cl)
 
@@ -376,14 +398,14 @@ test <- system.time({
             .packages = c("raster", "dplyr"),
             .inorder = FALSE) %dopar%{
               
-              print(ncdl)
-              print(y)
+              # print(ncdl)
+              # print(y)
               
               allyrs <- c(startyear:endyear)
               thisyr <- allyrs[y]
               gdd <- gdd_all %>% 
                 dplyr::filter(year == thisyr & Site == cdls[ncdl, "site"])
-              # filter(year == thisyr & SiteID == sites$ID[site])
+              # dplyr::filter(year == thisyr & SiteID == sites$ID[site])
               
               set.seed(thisyr)
 
@@ -412,7 +434,6 @@ test <- system.time({
               ind_df <- cbind(ind_df, ls_complete)
               ind_df$dd_accum <- 0
               ind_df$diapause <- -1
-              ind_df$diap_gdd <- 0
               ind_df$numgen <- 0
               ind_df$parent <- NA
               ind_df$lineage <- 1:nrow(ind_df)
@@ -454,9 +475,6 @@ test <- system.time({
                 dd_tmp <- rep(gdd$degday[which(gdd$yday == doy)], times = ncohort)
                 # Accumulate degree days ----
                 dd_accum <- dd_accum + dd_tmp # resets with lifestage change
-                
-                #TODO: This seems like a bug
-                olddf$diap_gdd <- olddf$diap_gdd + gdd$degday[which(gdd$yday == doy)]
                 
                 # Calculate lifestage progression: Is accumulation > lifestage requirement
                 progress <- dd_accum >= ls_dd
@@ -524,8 +542,9 @@ test <- system.time({
                   newrows <- newdf[which(newdf$indiv %in% ovip), ]
                   # simulate oviposition variation
                   egg_lam <- ifelse(newrows$numgen == 0, 1, lambda)
-                  negg <- rpois(n = nrow(newrows), lambda = egg_lam)
-                  newrows <- newrows[rep(row.names(newrows), negg), ]
+                  # deal with lambda 1.5/2.5 by flipping between integers
+                  negg <- round(egg_lam + base::rep(c(0.1, -0.1), length.out = length(egg_lam)))
+                  newrows <- newrows[base::rep(row.names(newrows), negg), ]
                   
                   if(nrow(newrows) > 0){
                     
@@ -553,11 +572,11 @@ test <- system.time({
                 
                 ind_df <- rbind(olddf, newdf)
                 
-                # daily population counts to save
-                pop_list[[index]] <- ind_df %>% 
-                  group_by(numgen, lifestage, active, diapause) %>% 
-                  tally() %>% 
-                  mutate(doy = index)
+                # # daily population counts to save
+                # pop_list[[index]] <- ind_df %>% 
+                #   group_by(numgen, lifestage, active, diapause) %>% 
+                #   tally() %>% 
+                #   mutate(doy = index)
               }  # daily loop
               
               # Summarize results -----
@@ -573,14 +592,14 @@ test <- system.time({
               
               attvoltinism <- ind_df %>% 
                 dplyr::filter(diapause == 1 | active == 1) %>% 
-                # filter(numgen > 0) %>% 
+                # dplyr::filter(numgen > 0) %>% 
                 group_by(numgen) %>% 
                 tally() %>% 
                 stats::weighted.mean(x = .$numgen, w = .$n)
 
               # redundant with diap below              
               # volt_comp <- ind_df %>%
-              #   filter(diapause == 1 & active == 0) %>% 
+              #   dplyr::filter(diapause == 1 & active == 0) %>% 
               #   group_by(numgen) %>% 
               #   tally() %>% 
               #   tidyr::spread(numgen, n)
@@ -606,37 +625,34 @@ test <- system.time({
                 group_by(numgen) %>% 
                 nrow()
               
-              ## Can show which OW adults had lost descendants
-              # if(lost > 0){
-              # lost_parents <- ind_df %>% 
-              #   filter(active == 1) %>% 
-              #   pull(unique(parent))
-              # lost_parents2 <- ind_df %>% 
-              #   filter(indiv %in% lost_parents) %>% 
-              #   pull(unique(parent))
-              # lost_parents3 <- ind_df %>% 
-              #   filter(indiv %in% lost_parents2) %>% 
-              #   pull(unique(parent))
-              # lost_parents4 <- ind_df %>% 
-              #   filter(indiv %in% lost_parents3) %>% 
-              #   pull(unique(parent))
-              # 
-              # hist(ind_df$OA_DOY[which(ind_df$indiv %in% lost_parents4)])
-              # hist(ind_df$OA_DOY[which(ind_df$indiv %!in% lost_parents4 & ind_df$OA_DOY > 0)])
-              # 
-              # }else{
-              #   lost_parents = NA
-              # }
+              maxgdd <- gdd$accumdegday[which(gdd$yday == 365)]
+              diap_gdd <- ind_df %>%
+                dplyr::filter(diapause == 1 & active == 0) %>%
+                left_join(gdd[,c("yday", "accumdegday")], by = c("TA_DOY" = "yday")) %>% 
+                group_by(numgen) %>%
+                summarise(meandiapgdd = mean(maxgdd - accumdegday)) %>%
+                tidyr::spread(numgen, meandiapgdd)
               
-              # diap_gdd <- ind_df %>% 
-              #   filter(diapause == 1 & active == 0) %>% 
-              #   group_by(numgen) %>% 
-              #   summarise(meandiapgdd = mean(diap_gdd)) %>% 
-              #   tidyr::spread(numgen, meandiapgdd)
-              # names(diap_gdd) <- paste("diapgdd", names(diap_gdd), sep = "_")
-              # 
+              if(nrow(diap_gdd) == 0){ 
+                diap_gdd <- data.frame(diapgdd_1 = NA)
+              }else{
+                names(diap_gdd) <- paste("diapgdd", names(diap_gdd), sep = "_")
+              }
+              
+              diap_doy <- ind_df %>% 
+                dplyr::filter(diapause == 1 & active == 0) %>%
+                group_by(numgen) %>% 
+                summarise(meandiapdoy = mean(TA_DOY)) %>% 
+                tidyr::spread(numgen, meandiapdoy)
+              
+              if(nrow(diap_doy) == 0){ 
+                diap_doy <- data.frame(diapdoy_1 = NA)
+              }else{
+                names(diap_doy) <- paste("diapdoy", names(diap_doy), sep = "_")
+              }
+
               diap <- ind_df %>%
-                filter(diapause == 1 & active == 0) %>% 
+                dplyr::filter(diapause == 1 & active == 0) %>% 
                 group_by(numgen) %>% 
                 tally() %>% 
                 tidyr::spread(numgen, n)
@@ -649,7 +665,7 @@ test <- system.time({
               
               
               repro <- ind_df %>%
-                filter(diapause == 0) %>% 
+                dplyr::filter(diapause == 0) %>% 
                 group_by(numgen) %>% 
                 tally() %>% 
                 tidyr::spread(numgen, n)
@@ -665,28 +681,33 @@ test <- system.time({
                             dplyr::filter(diapause == 1 & active == 0) %>% 
                             nrow()) / nsim
               
-              # ann_lam_adj_5000 <- sum(ind_df %>% 
-              #               filter(diapause == 1 & active == 0) %>% 
-              #               mutate(gdd_penalty = 1 - diap_gdd / 5000) %>% 
-              #               pull(gdd_penalty))/ nsim
-              #   
-              # ann_lam_adj_2500 <- sum(ind_df %>% 
-              #                           filter(diapause == 1 & active == 0) %>% 
-              #                           mutate(gdd_penalty = 1 - diap_gdd / 2500) %>% 
-              #                           pull(gdd_penalty))/ nsim
+              ann_lam_adj_5 <- sum(ind_df %>%
+                            dplyr::filter(diapause == 1 & active == 0) %>%
+                            left_join(gdd[,c("yday", "accumdegday")], by = c("TA_DOY" = "yday")) %>% 
+                            mutate(diap_gdd = maxgdd - accumdegday) %>% 
+                            mutate(gdd_penalty = 1 - diap_gdd * .05 / 1000) %>%
+                            pull(gdd_penalty))/ nsim
+              
+              ann_lam_adj_10 <- sum(ind_df %>%
+                                     dplyr::filter(diapause == 1 & active == 0) %>%
+                                     left_join(gdd[,c("yday", "accumdegday")], by = c("TA_DOY" = "yday")) %>% 
+                                     mutate(diap_gdd = maxgdd - accumdegday) %>% 
+                                     mutate(gdd_penalty = 1 - diap_gdd * .10 / 1000) %>%
+                                     pull(gdd_penalty))/ nsim
               
               
               results <- data.frame(SiteID = cdls[ncdl, "site"], Year = thisyr, cdl_mu, cdl_sd, 
                                     lambda, voltinism, attvoltinism, lost, volt_att,  
-                                    diap, repro, ann_lam)
+                                    diap, diap_gdd, diap_doy, repro, ann_lam, 
+                                    ann_lam_adj_5, ann_lam_adj_10)
               
               # thinking about which lineages are doing better or worse
               
               # oa <- ind_df %>%
-              #   filter(numgen == 0) %>% 
+              #   dplyr::filter(numgen == 0) %>% 
               #   dplyr::select(lineage, OA)
               # cp <- ind_df %>% 
-              #   filter(numgen > 0) %>% 
+              #   dplyr::filter(numgen > 0) %>% 
               #   group_by(lineage, numgen) %>% 
               #   summarise(meancp = mean(ind_df$cdl[ind_df$indiv %in% parent]))
               # lam <- ind_df %>% 
@@ -695,10 +716,10 @@ test <- system.time({
               # linlost <- ind_df %>% 
               #   group_by(lineage, numgen) %>% 
               #   summarise(linlost = length(which(active == 1))) %>% 
-              #   filter(linlost > 0)
+              #   dplyr::filter(linlost > 0)
               # if(length(unique(linlost$numgen)) == 1){
               #   cp <- cp %>% 
-              #     filter(numgen == unique(linlost$numgen)[1] - 1)
+              #     dplyr::filter(numgen == unique(linlost$numgen)[1] - 1)
               #   linlost <- linlost %>% 
               #     ungroup() %>% 
               #     dplyr::select(-numgen)
@@ -708,22 +729,19 @@ test <- system.time({
               #   left_join(linlost)
               # lineages$linlost[is.na(lineages$linlost)] <- 0
                               
-              # results <- data.frame(SiteID = sites$ID[site],
-              # Year = thisyr, lambda, voltinism, lost, volt_att, volt_comp, ann_lam)
-              # outlist2[[length(outlist2)+1]] <- results
               out <- list()
-              out$indiv <- ind_df %>% 
-                mutate(SiteID = cdls[ncdl, "site"], 
-                       Year = thisyr, 
+              out$indiv <- ind_df %>%
+                mutate(SiteID = cdls[ncdl, "site"],
+                       Year = thisyr,
                        cdl_mu, cdl_sd,  lambda)
               out$results <- results
-              out$pop <- bind_rows(pop_list) %>% 
-                mutate(SiteID = cdls[ncdl, "site"], 
-                       Year = thisyr, 
-                       cdl_mu, cdl_sd,  lambda)
+              # out$pop <- bind_rows(pop_list) %>% 
+              #   mutate(SiteID = cdls[ncdl, "site"], 
+              #          Year = thisyr, 
+              #          cdl_mu, cdl_sd,  lambda)
               return(out)
               
-              # 
+
               # # plot proportion over season
               # ggplot(out$pop, aes(x = doy, y = n, fill = numgen)) +
               #   geom_bar(stat = "identity", width = 1)
@@ -741,7 +759,7 @@ test <- system.time({
 
 stopCluster(cl)
 
-saveRDS(outlist, "ibm_outlist_GCA_6sites_daymet.rds")
+saveRDS(outlist, "ibm_outlist_DCA_12sites_daymet.rds")
 
 # quirks: indiv can decide to diapause at beginning of TA, but still be active because is doesn't make it to complete TA stage before end of year
 # res <- bind_rows(outlist)
@@ -752,16 +770,16 @@ saveRDS(outlist, "ibm_outlist_GCA_6sites_daymet.rds")
 # saveRDS(res, "ibm_results_GCA_6sites_daymet.rds")
 
 # res <- readRDS("ibm_outlist_GCA_6sites_daymet.rds")
-inds <- outlist %>% 
-  flatten() %>%
-  purrr::map(1) %>% dplyr::bind_rows()
+# inds <- outlist %>% 
+  # flatten() %>%
+  # purrr::map(1) %>% dplyr::bind_rows()
 
 firsts <- outlist %>% 
   flatten() %>%
-  purrr::map(2) %>% dplyr::bind_rows()
+  purrr::map(1) %>% dplyr::bind_rows()
 seconds <- outlist %>% 
   flatten() %>%
-  purrr::map(3) %>% dplyr::bind_rows()
+  purrr::map(2) %>% dplyr::bind_rows()
 
 # firsts$SiteID <- plyr::revalue(firsts$SiteID, c("Yakima Training Center, WA"="Vantage, WA", 
 #                                                       "Baskett Slough, OR"="Rickreall, OR"))

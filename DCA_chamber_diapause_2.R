@@ -224,6 +224,7 @@ dat$year <- as.factor(dat$year)
 dat$lat <- ifelse(dat$site %in% c("Delta, UT"),
                   ifelse(dat$year == "2014", dat$lat + 0.1,
                          ifelse(dat$year == "2019", dat$lat - 0.1, dat$lat)), dat$lat)
+dat$lat <- case_when()
 photo <- data.frame(lat = seq(33, 45, by = 0.01),
                     dl = photoperiod(seq(33, 45, by = 0.01), 172, p = 1.5))
 
@@ -240,17 +241,18 @@ dat$lat2 <- MercLats(dat$lat)
 dat$upr <- 1.96*dat$se_0.5 + dat$pred_0.5
 dat$lwr <- dat$pred_0.5 - 1.96*dat$se_0.5 
 
-dat <- dat %>% filter(lat < 40) %>%
+dat <- dat %>% 
+  # filter(lat < 40) %>%
   filter(rowid != "Gold Butte, NV_2017") %>% 
   droplevels()
 
-plt <- ggplot(dat, aes(x = lat, y = cp_mean, shape = year)) +
+plt <- ggplot(dat, aes(x = lat, y = pred_0.5, shape = year)) +
   geom_point(size = 5) +
-  scale_shape_discrete(name = "Critical\nphotoperiod") +
+  scale_shape_discrete(name = "Year") +
   geom_linerange(aes(ymin = lwr, ymax = upr), size = 1.5, alpha = .6) +
   # annotate("text", label = "solstice", x = 38.5, y = 14.95, size = 5, angle = 18, fontface = "italic") +
   xlab("Latitude") +
-  ylab("Day length (hours)") +
+  ylab("Critical day length (hours)") +
   theme(legend.position = c(.87, .1))
 plt
 

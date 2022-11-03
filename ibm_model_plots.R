@@ -1,11 +1,21 @@
 # Plots from optimal CP model
+theme_set(theme_bw(base_size = 16) +
+            theme(panel.grid.major = element_blank(),
+                  panel.grid.minor = element_blank())) 
 
+
+outlist <- readRDS("ibm_outlist_DCA_12sites_daymet.rds")
 # Photothermographs/consequences plots ----
 # Plot voltinism photothermograph with ridge plots
+inds <- outlist %>% 
+  flatten() %>%
+  purrr::map(1) %>% dplyr::bind_rows()
+
+
 inds <- inds %>% 
   filter(Year %in% c(2011, 2013, 2015), 
          cdl_mu == 15,
-         lambda == 1)
+         lambda == 1.5)
 gdd_yr <- gdd_all %>% 
   filter(year %in% c(2011, 2013, 2015))
 
@@ -19,8 +29,8 @@ minphoto <- min(gdd_yr$daylength)
 cdl_hist <- conseq %>% # conseq from below
   group_by(SiteID) %>% 
   filter(cdl > 0) %>% 
-  mutate(breaks = cut(cdl, breaks=seq(min(cdl),max(cdl),length.out = 20), 
-                      labels=seq(min(cdl),max(cdl), length.out = 20)[-1], 
+  mutate(breaks = cut(cdl, breaks=seq(min(cdl),max(cdl),length.out = 30), 
+                      labels=seq(min(cdl),max(cdl), length.out = 30)[-1], 
                       include.lowest=TRUE)) %>% 
   mutate(daylength = as.numeric(as.character(breaks))) %>%
   group_by(SiteID, daylength) %>% 
@@ -35,8 +45,8 @@ cdl_hist <- conseq %>% # conseq from below
 # sens_stage <- bind_rows(oa, teneral)
 sens_hist <- conseq %>% # conseq from below
   group_by(SiteID) %>% 
-  mutate(breaks = cut(accumdegday, breaks = seq(min(accumdegday), max(accumdegday), length.out = 100),
-                      labels = seq(min(accumdegday), max(accumdegday), length.out = 100)[-1],
+  mutate(breaks = cut(accumdegday, breaks = seq(min(accumdegday), max(accumdegday), length.out = 150),
+                      labels = seq(min(accumdegday), max(accumdegday), length.out = 150)[-1],
                       include.lowest = TRUE)) %>% 
   mutate(accumdegday = as.numeric(as.character(breaks))) %>% 
   group_by(SiteID, accumdegday) %>% 
@@ -45,9 +55,12 @@ sens_hist <- conseq %>% # conseq from below
          Site = SiteID)
 sens_lines <- sens_hist %>% filter(accumdegday > 400)
 
-plt <- ggplot(gdd_yr, aes(x = accumdegday, y = daylength, group = as.factor(year), color = as.factor(year))) +
-  geom_hline(data = cdl_hist, aes(yintercept = daylength, alpha = n/100000), color = "light grey", size = 2) +
-  geom_vline(data = sens_lines, aes(xintercept = accumdegday, alpha = n/100000), color = "light grey", size = 2) +
+gdd_yr$Site <- forcats::fct_relevel(gdd_yr$Site, levels(gdd_yr$Site)[c(1, 7, 2, 5, 6, 3, 4)])
+
+plt <- ggplot(gdd_yr %>% filter(Site %in% inc_sites), 
+              aes(x = accumdegday, y = daylength, group = as.factor(year), color = as.factor(year))) +
+  geom_hline(data = cdl_hist, aes(yintercept = daylength, alpha = n/100000000), color = "light grey", size = 1, show.legend = FALSE) +
+  geom_vline(data = sens_lines, aes(xintercept = accumdegday, alpha = n/100000000), color = "light grey", size = 1, show.legend = FALSE) +
   geom_line(size = 1) +
   coord_cartesian(xlim = c(-50, maxgdd + 100), ylim = c(minphoto - .5, 17.2), expand = FALSE) +
   # scale_color_viridis(discrete = TRUE, name = "Year", option = "D") +
@@ -62,12 +75,12 @@ plt <- ggplot(gdd_yr, aes(x = accumdegday, y = daylength, group = as.factor(year
   # geom_rug(data = results, aes(y = cdl), color = "gray", alpha = .1) +
   # ggtitle("Photothermographs with critical photoperiod\nand simulated sensitive stage emergence") +
   xlab("Accumulated degree-days") +
-  theme(panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank()) +
   ylab("Daylength (hours)") +
-  facet_wrap(~Site, nrow = 3)
+  facet_wrap(~Site, nrow = 3) +
+  theme(legend.position = c(.85, .8))
 plt
 
+ggsave(filename = "GCA_example_PT.png", plot = plt, device = "png", width = 6, height = 9, units = "in")
 
 
 
@@ -140,11 +153,12 @@ conseq <- outcomes %>%
                                  offspring != "lost" ~ "Reproduces, offspring fits"),
          date = as.Date(doy, origin=as.Date("2015-12-31"))) %>% 
   filter(cdl_mu == 15, 
-         lambda == 1,
+         lambda == 1.5,
          Year %in% c(2011, 2013, 2015))
 
 conseq$Consequence <- factor(conseq$Consequence, levels = c("Diapauses", "Reproduces, offspring lost", "Reproduces, offspring fits"))
 conseq$Year <- factor(as.character(conseq$Year), levels = c("2015", "2013", "2011"))
+conseq$SiteID <- forcats::fct_relevel(conseq$SiteID, levels(conseq$SiteID)[c(1, 7, 2, 5, 6, 3, 4)])
 
 library(ggridges)
 library(viridis)
@@ -156,13 +170,13 @@ plt2 <- ggplot(conseq, aes(x = accumdegday, y = Year,
   scale_fill_viridis(discrete = TRUE, alpha = .25, drop = FALSE) +
   # scale_x_continuous(limits = c(-50, maxgdd + 100), expand = c(0, 0)) +
   scale_y_discrete(expand = c(0.1, .1)) +
-  theme(panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank()) +
   ylab("Year") + xlab("Accumulated degree-days (base 10C)") +
-  facet_wrap(~SiteID, nrow = 3)
+  facet_wrap(~SiteID, nrow = 3) +
+  theme(legend.position = c(.7, .8))
 plt2
 
 
+ggsave(filename = "GCA_example_conseq.png", plot = plt2, device = "png", width = 6, height = 9, units = "in")
 
 
 
@@ -175,6 +189,8 @@ plt2
 # 4. Adult counts to voltinism based on relative size to "typical" penultimate
 # 5. Lineage analysis too much, what about comparing parents in penultimate generations and their CP/emergence time
 
+
+# REDO added columns since last time
 census <- firsts %>% 
   group_by(SiteID, Year, cdl_mu, cdl_sd, lambda) %>% 
   pivot_longer(
@@ -372,7 +388,9 @@ saveRDS(res, "ibm_results_GCA_Yakima_daymet.rds")
 
 # Quanitfying voltinism
 library(viridis)
-plt <- ggplot(res %>% filter(lambda == 1.5, Year <= 2018, cdl_sd == 0, SiteID == "Vantage, WA"), aes(x = cdl_mu, y = attvoltinism, color = log(ann_lam_adj_2500))) +
+
+# CP vs voltinism with log(lambda) over years for a single site
+plt <- ggplot(firsts %>% dplyr::filter(lambda == 1.5, cdl_sd == .5, SiteID == "Delta, UT"), aes(x = cdl_mu, y = attvoltinism, color = log(ann_lam_adj_5))) +
   geom_point() +
   scale_color_viridis(name = "Log(lambda)") +
   facet_wrap(~Year, ncol = 5) +
@@ -386,126 +404,13 @@ plt <- ggplot(res %>% filter(lambda == 1.5, Year <= 2018, cdl_sd == 0, SiteID ==
 plt
 
 res <- readRDS("ibm_results_dca.rds")
-# Compare to cohort model results
-
-# UNKNOWN: Does voltinism from IBM == voltinism from cohort model?
-# Cohort has weighted completed x weighted diapause, is this the same as
-# weighted mean of [completed(1) x diapause(1), completed(2) x diapause(2), ...]?
-# Go to cohort model and test by putting voltinism calc (1st for each cohort)
-# in matrix of weighted results 
-
-coh <- readRDS("site_array_gca_17coh.rds")
-
-# extract gdd, voltinism, lost, 
-cohlist <- list()
-for (w in 1:53){
-  
-  coh_att <- data.frame(coh[, w, 7,])
-  names(coh_att) <- paste0("X", 2016:2020)
-  coh_att <- coh_att %>% 
-    mutate(ID = sites$ID) %>% 
-    tidyr::gather(year, attempted, X2016:X2020) %>% 
-    mutate(year = gsub(pattern = "X", replacement = "", x = year, fixed = TRUE),
-           week = w)
-  
-  
-  coh_volt <- data.frame(coh[, w, 8,])
-  names(coh_volt) <- paste0("X", 2016:2020)
-  coh_volt <- coh_volt %>% 
-    mutate(ID = sites$ID) %>% 
-    tidyr::gather(year, completed, X2016:X2020) %>% 
-    mutate(year = gsub(pattern = "X", replacement = "", x = year, fixed = TRUE),
-           week = w)
-  
-  coh_wvolt <- data.frame(coh[, w, 9,])
-  names(coh_wvolt) <- paste0("X", 2016:2020)
-  coh_wvolt <- coh_wvolt %>% 
-    mutate(ID = sites$ID) %>% 
-    tidyr::gather(year, wvolt, X2016:X2020) %>% 
-    mutate(year = gsub(pattern = "X", replacement = "", x = year, fixed = TRUE),
-           week = w)
-  
-  coh_diap <- data.frame(coh[, w, 10,])
-  names(coh_diap) <- paste0("X", 2016:2020)
-  coh_diap <- coh_diap %>% 
-    mutate(ID = sites$ID) %>% 
-    tidyr::gather(year, diap, X2016:X2020) %>% 
-    mutate(year = gsub(pattern = "X", replacement = "", x = year, fixed = TRUE),
-           week = w)
-  
-  coh_all <-  coh_att %>% 
-    left_join(coh_volt) %>% 
-    left_join(coh_wvolt) %>% 
-    left_join(coh_diap)
-  cohlist[[w]] <- coh_all
-}
-cohplot <- bind_rows(cohlist) %>% 
-  tidyr::gather(var, val, attempted, completed, wvolt, diap)
-
-# plot helps show that diapause * completed doesn't make sense, if 
-
-ggplot(cohplot, aes(x = week, y = val, group = ID, color = ID)) +
-  geom_line() +
-  facet_grid(var ~ year, scales = "free") +
-  theme_bw(base_size = 14)
-
-# best diapause cutoff to make IBM??
-# cohplot <- bind_rows(cohlist)
-# ggplot(cohplot, aes(x = week, y = ifelse(diap > .75, NA, 1) * completed, group = ID, color = ID)) +
-#   geom_line(aes(size = 1-diap)) +
-#   facet_grid(. ~ year) +
-#   theme_bw(base_size = 14)
-# 
-# coh_volt <- cohplot %>% 
-#   mutate(d25 = ifelse(diap > .25, NA, 1) * completed,
-#          d50 = ifelse(diap > .5, NA, 1) * completed,
-#          d75 = ifelse(diap > .75, NA, 1) * completed,
-#          d90 = ifelse(diap > .9, NA, 1) * completed,
-#          d95 = ifelse(diap > .95, NA, 1) * completed,
-#          d98 = ifelse(diap > .98, NA, 1) * completed) %>% 
-#   group_by(ID, year) %>% 
-#   summarise_all(max, na.rm = TRUE) %>% 
-#   arrange(year, ID)
-# 
-# # good correlation between the cohort and IBM voltinism estimates now
-# # but what does it really mean? 
-# # is this just weighted voltinism? Why does it work for the cohort model?
-# coh_volt <- coh_volt %>% ungroup() %>%  mutate(res$voltinism)
-# plot(coh_volt$`res$voltinism`, coh_volt$d95)
-# abline(0, 1)
-
-# this matches IBM well if attempted used instead of completed, why?
-cohdf <- bind_rows(cohlist) %>% 
-  group_by(ID, year) %>% 
-  arrange(week) %>% 
-  # mutate(diapnewgen = cumsum(c(0, diff(attempted)) * (1-diap))) %>% 
-  filter(week == 53) %>% 
-  ungroup() %>% 
-  rename(SiteID = ID, Year = year) %>% 
-  mutate(Year = as.numeric(Year),
-         mismatch = wvolt - completed)
-
-ind_diap <- res %>% 
-  rowwise() %>% 
-  mutate(ind_comp = sum(c(comp_1, comp_2, comp_3, comp_4), na.rm = TRUE),
-         ind_diap = ind_comp / (ind_comp + lost)) %>% 
-  left_join(cohdf)
-
-plot(ind_diap$voltinism, ind_diap$wvolt)
-abline(0, 1)
-plot(ind_diap$ind_diap, ind_diap$diap)
-abline(0, 1)
 
 
 # Optimal CDL plots
-library(ggplot2)
-library(viridis)
-theme_set(theme_bw(base_size = 14) +
-            theme(panel.grid.major = element_blank(),
-                  panel.grid.minor = element_blank())) 
+
 ###############
-res <- readRDS("ibm_results_nwsites.rds") %>% 
-  filter(cdl_sd == .33, lambda == 1.5, SiteID == "Sutherlin, OR", Year > 2009)
+res <- firsts %>% 
+  filter(cdl_sd == .25, lambda == 1.5, SiteID == "Delta, UT", Year > 2009)
 # filter(cdl_sd == .33, lambda == 1.5, SiteID %in% unique(SiteID)[c(1, 2, 6, 7, 9, 10)])
 
 plt <- ggplot(res, aes(x = cdl_mu, y = attvoltinism)) +
@@ -537,7 +442,7 @@ plt
 
 
 # lines
-plt <- ggplot(res1, aes(x = cdl_mu, y = log(ann_lam_adj_2500), group = lambda, color = lambda)) +
+plt <- ggplot(res, aes(x = cdl_mu, y = log(ann_lam), group = lambda, color = lambda)) +
   geom_line() +
   # scale_x_reverse() +
   scale_color_viridis(begin = 1, end = 0) +
@@ -550,23 +455,25 @@ plt
 
 # across years
 res <- readRDS("ibm_results_west.rds") # %>%  filter(SiteID == 123)
-# res$SiteID <- factor(res$SiteID, levels = c("Lovell, WY", 
-#                                         "Delta, UT", "St. George, UT", "Princess, NV",
-#                                         "Big Bend, NV", "Blythe, CA", "Cibola, CA",
-#                                         "Imperial, AZ"))
+res$SiteID <- factor(res$SiteID, levels = c("Lovell, WY",
+                                        "Delta, UT", "St. George, UT", "Princess, NV",
+                                        "Big Bend, NV", "Blythe, CA", "Cibola, CA",
+                                        "Imperial, AZ"))
 res$SiteID <- plyr::revalue(res$SiteID, c("Yakima Training Center, WA"="Yakima TC, WA", 
                                           "Baskett Slough, OR"="Rickreall, OR"))
 res$SiteID <- factor(res$SiteID, levels = c("Bellingham, WA", "Yakima TC, WA", "Rickreall, OR",
                                             "Sutherlin, OR", "McArthur, CA", "Palermo, CA"))
 
-# cps <- read.csv("DCA_CP.csv", header = TRUE) %>% 
-#   filter(Site %in% res$SiteID, Year == 2019) %>% 
-#   rename(SiteID = Site)
+cps <- read.csv("DCA_CP.csv", header = TRUE) %>%
+  filter(Site %in% res$SiteID, Year == 2019) %>%
+  rename(SiteID = Site)
 cps <- read.csv("GCA_CP.csv", header = TRUE) %>% 
   filter(year == 2019) %>% 
   rename(SiteID = population, CP = cp)
 
 res <- res %>% filter(SiteID %in% cps$SiteID) %>% droplevels()
+
+firsts <- firsts %>% filter(SiteID %in% cps$SiteID) %>% droplevels()
 
 gm_mean = function(x, na.rm=TRUE){
   exp(sum(log(x[x > 0]), na.rm=na.rm) / length(x))
@@ -576,11 +483,16 @@ geom_lam <- firsts %>%
   # filter(Year > 2007) %>% 
   group_by(SiteID, cdl_mu, cdl_sd, lambda) %>% 
   # tidyr::complete(Year, cdl_mu, cdl_sd, lambda, fill = list(ann_lam = 0)) %>% 
-  summarise(mean_annual_lambda_0 = gm_mean(ann_lam + 0.001))
-# mean_annual_lambda_1 = gm_mean(ann_lam_adj_5000 + 0.001),
+  summarise(mean_annual_lambda_0 = gm_mean(ann_lam + 0.001),
+            mean_annual_lambda_1 = gm_mean(ann_lam_adj_5 + 0.001))
 # mean_annual_lambda_2 = gm_mean(ann_lam_adj_2500 + 0.001))
 
-plt <- ggplot(geom_lam, aes(x = cdl_mu, y = lambda, fill = log(mean_annual_lambda_0))) +
+geom_lam$SiteID <- factor(geom_lam$SiteID, levels = c("Lovell, WY",
+                                            "Delta, UT", "St. George, UT", "Princess, NV",
+                                            "Big Bend, NV", "Blythe, CA", "Cibola, CA",
+                                            "Imperial, AZ"))
+
+plt <- ggplot(geom_lam, aes(x = cdl_mu, y = lambda, fill = log(mean_annual_lambda_1))) +
   geom_raster() +
   # scale_x_reverse() +
   scale_fill_viridis(begin = 0, end = 1) +
@@ -592,15 +504,18 @@ plt <- ggplot(geom_lam, aes(x = cdl_mu, y = lambda, fill = log(mean_annual_lambd
 plt
 
 # lines
-plt <- ggplot(geom_lam, aes(x = cdl_mu, y = log(mean_annual_lambda_0), group = lambda, color = lambda)) +
+plt <- ggplot(geom_lam %>% filter(lambda == 2, cdl_sd == 1), 
+              aes(x = cdl_mu, y = log(mean_annual_lambda_1))) +
   geom_line() +
   geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.7) +
-  scale_color_continuous(name = "CP std. dev.", breaks = unique(geom_lam$cdl_sd), labels = unique(geom_lam$cdl_sd)) +
+  # scale_color_continuous(name = "CP std. dev.", breaks = unique(geom_lam$cdl_sd), labels = unique(geom_lam$cdl_sd)) +
   geom_vline(data = cps, aes(xintercept = CP), linetype = "dotted", alpha = 0.7) +
-  # scale_x_reverse() +
+  scale_x_continuous(breaks = c(8, 10, 12, 14, 16, 18)) +
   # scale_color_viridis(begin = 1, end = 0) +
+  xlab("Modeled critical daylength") +
+  ylab("Modeled log mean annual growth rate") +
   facet_wrap(~SiteID)
-
+plt
 
 # Geometric mean vs annual
 # lines
@@ -623,31 +538,223 @@ plt
 
 
 
+# Optimal CP paper ----
+outlist <- readRDS("ibm_outlist_GCA_6sites_daymet.rds")
+sites <- data.frame(ID = c("Ephrata, WA", "Yakima TC, WA",
+  "Sutherlin, OR", "Bellingham, WA",
+  "McArthur, CA", "Palermo, CA", "Rickreall, OR"),
+  x = c(-119.655253, -119.986530,
+          -123.315854, -122.479482,
+          -121.41, -121.58, -123.27),
+  y = c(47.161647, 46.756318,
+          43.387721, 48.756105,
+          41.10, 39.41, 44.98))[-1,]
+
+
+firsts <- outlist %>% 
+  flatten() %>%
+  purrr::map(1) %>% dplyr::bind_rows()
+seconds <- outlist %>% 
+  flatten() %>%
+  purrr::map(2) %>% dplyr::bind_rows()
+
+
+
+firsts <- firsts %>% 
+  left_join(sites, by = c("SiteID" = "ID")) %>% 
+  mutate(SiteID = forcats::fct_reorder(SiteID, y, .desc = TRUE))
 
 # best cdl combo
-res <- readRDS("ibm_results_midwest.rds")
-geom_lam <- res %>% 
-  # left_join(maxvolt, by = c("Year" = "year")) %>% 
-  left_join(maxvolt, by = c("Year" = "year", "SiteID" = "Site")) %>%
+summ_lam <- firsts %>% 
+  group_by(SiteID, cdl_sd, lambda, Year) %>% 
+  mutate(maxattgen = max(attvoltinism, na.rm = TRUE),
+         maxcomgen = max(voltinism, na.rm = TRUE),
+         maxlambda = max(ann_lam),
+         maxlambda5 = max(ann_lam_adj_5)) %>% 
   group_by(SiteID, cdl_mu, cdl_sd, lambda) %>% 
   summarise(mean_annual_lambda = gm_mean(ann_lam + 0.001),
-            mean_arith_lambda = mean(ann_lam + 0.001),
-            mean_loglam = log(mean_annual_lambda),
+            mean_annual_lambda_5 = gm_mean(ann_lam_adj_5 + 0.001),
+            mean_annual_lambda_10 = gm_mean(ann_lam_adj_10 + 0.001),
             mean_lost = mean(lost),
             mean_wvolt = mean(ifelse(is.na(voltinism), 0, voltinism)),
             mean_attvolt = mean(attvoltinism),
-            mean_mismatch = mean(attvoltinism - maxgen),
+            mean_mismatch = mean(attvoltinism - maxcomgen),
+            mean_lambda5_mm = mean(ann_lam_adj_5 - maxlambda5),
             sd_annual_lambda = sd(ann_lam + 0.001),
-            sd_loglambda = sd(log(ann_lam + 0.001)),
             sd_lost = sd(lost),
             sd_wvolt = sd(ifelse(is.na(voltinism), 0, voltinism)),
             sd_attvolt = sd(attvoltinism),
-            sd_mismatch = sd(attvoltinism - maxgen))
-geom_lam$SiteID <- factor(geom_lam$SiteID, levels = levels(geom_lam$SiteID)[c(1,6,4,5,2,3)])
+            sd_mismatch = sd(attvoltinism - maxcomgen))
 
-# ggplot(geom_lam, aes(x = mean_annual_lambda)) +
-#   geom_density() +
-#   facet_wrap(~lambda)
+
+year_best_cp <- firsts %>% 
+  group_by(SiteID, cdl_sd, lambda, Year) %>% 
+  mutate(maxattgen = max(attvoltinism, na.rm = TRUE),
+         maxcomgen = max(voltinism, na.rm = TRUE),
+         maxlambda = max(ann_lam),
+         maxlambda5 = max(ann_lam_adj_5),
+         ann_lam_mm = ann_lam_adj_5 - maxlambda5) %>% 
+  summarise(best_ann_cp = mean(cdl_mu[which(ann_lam_mm == 0)], na.rm = TRUE))
+    
+best_cp <- summ_lam %>% 
+  group_by(SiteID, cdl_sd, lambda) %>% 
+  mutate(maxlam = max(mean_annual_lambda_5),
+         difflam = mean_annual_lambda_5 - maxlam) %>% 
+  summarise(best_cp = mean(cdl_mu[which(difflam == 0)], na.rm = TRUE),
+            mean_lost = mean(mean_lost[which(difflam == 0)], na.rm = TRUE))
+
+# inc_sites <- c("Lovell, WY", "Delta, UT", "Imperial, AZ")
+# inc_sites <- sites$ID
+inc_sites <- c("Bellingham, WA", "Sutherlin, OR", "Palermo, CA")
+dat <- firsts %>% filter(lambda == 2.5, cdl_sd == .25, SiteID %in% inc_sites)
+bestline <- summ_lam %>% filter(lambda == 2.5, cdl_sd == .25, SiteID %in% inc_sites)
+yearcp <- year_best_cp %>% filter(lambda == 2.5, cdl_sd == .25, SiteID %in% inc_sites)
+bestcp <- best_cp %>% filter(lambda == 2.5, cdl_sd == .25, SiteID %in% inc_sites)
+
+plt <- ggplot(dat, aes(x = cdl_mu, y = log(ann_lam_adj_5 + 0.001), group = Year)) +
+  geom_line(alpha = .2, color = "black") +
+  # scale_color_viridis(begin = .9, end = 0) +
+  scale_x_continuous(breaks = c(10:20)) +
+  geom_line(data = bestline, aes(x = cdl_mu, y = log(mean_annual_lambda_5)), size = 1, inherit.aes = FALSE) +
+  facet_wrap(~SiteID, ncol = 1) +
+  geom_rug(data = yearcp, aes(x = best_ann_cp), inherit.aes = FALSE) +
+  geom_vline(data = bestcp, aes(xintercept = best_cp), linetype = "dashed") +
+  coord_cartesian(ylim = c(-4, 4), xlim = c(10, 19)) +  
+  ylab("Log(population growth rate)") +
+  xlab("Critical photoperiod (day hours)")
+# theme(legend.position = c(.85, .15))
+plt
+
+ggsave(filename = "GCA_AnnualLambda_3site.png", plot = plt, device = "png", width = 6, height = 12, units = "in")
+
+
+
+# Does best CP vary by SD and lambda?
+inc_sd <- c(0, .5, 1, 1.5)
+# dat <- firsts %>% filter(lambda == 1.5, cdl_sd == .25, SiteID %in% inc_sites)
+bestline <- summ_lam %>% filter(SiteID %in% inc_sites, lambda == 1.5, cdl_sd %in% inc_sd)
+yearcp <- year_best_cp %>% filter(SiteID %in% inc_sites, lambda == 1.5, cdl_sd %in% inc_sd)
+bestcp <- best_cp %>% filter(SiteID %in% inc_sites, lambda == 1.5, cdl_sd %in% inc_sd)
+
+
+
+plt <- ggplot(bestline, aes(x = cdl_mu, y = log(mean_annual_lambda_5), group = cdl_sd, color = cdl_sd)) +
+  geom_line(size = 1) +
+  scale_color_continuous(name = "Standard deviation of\nphotoperiod response") +
+  scale_x_continuous(breaks = c(10:19)) +
+  facet_wrap(~SiteID, ncol = 1) +
+  geom_vline(data = bestcp, aes(xintercept = best_cp, color = cdl_sd), linetype = "dashed") +
+  coord_cartesian(ylim = c(-4, 2), xlim = c(10, 19)) +  
+  ylab("Log(population growth rate)") +
+  xlab("Critical photoperiod (day hours)") +
+  theme(legend.position = "bottom")
+plt
+
+ggsave(filename = "GCA_AnnualLambda_3site_SD.png", plot = plt, device = "png", width = 6, height = 12, units = "in")
+
+
+inc_sd <- .5
+# dat <- firsts %>% filter(lambda == 1.5, cdl_sd == .25, SiteID %in% inc_sites)
+bestline <- summ_lam %>% filter(SiteID %in% inc_sites, cdl_sd %in% inc_sd)
+yearcp <- year_best_cp %>% filter(SiteID %in% inc_sites, cdl_sd %in% inc_sd)
+bestcp <- best_cp %>% filter(SiteID %in% inc_sites, cdl_sd %in% inc_sd)
+
+
+
+plt <- ggplot(bestline, aes(x = cdl_mu, y = log(mean_annual_lambda_5), group = lambda, color = lambda)) +
+  geom_line(size = 1) +
+  scale_color_continuous(name = "Between\ngeneration\ngrowth rate") +
+  scale_x_continuous(breaks = c(10:19)) +
+  facet_wrap(~SiteID, ncol = 1) +
+  geom_vline(data = bestcp, aes(xintercept = best_cp, color = lambda), linetype = "dashed") +
+  coord_cartesian(ylim = c(-5, 3), xlim = c(10, 19)) +  
+  ylab("Log(population growth rate)") +
+  xlab("Critical photoperiod (day hours)")
+# theme(legend.position = c(.85, .15))
+plt
+
+ggsave(filename = "GCA_AnnualLambda_3site_lambda.png", plot = plt, device = "png", width = 6, height = 12, units = "in")
+
+
+# Parameter effect on best CP ----
+
+summ_lam <- firsts %>% 
+  pivot_longer(cols = starts_with("ann_lam"), names_to = "penalty", values_to = "ann_lambda") %>% 
+  group_by(SiteID, cdl_mu, cdl_sd, lambda, penalty) %>% 
+  summarise(mean_annual_lambda = gm_mean(ann_lambda + 0.001))
+          
+best_cp <- summ_lam %>% 
+  group_by(SiteID, cdl_sd, lambda, penalty) %>% 
+  mutate(maxlam = max(mean_annual_lambda),
+         difflam = mean_annual_lambda - maxlam) %>% 
+  summarise(best_cp = mean(cdl_mu[which(difflam == 0)], na.rm = TRUE))
+
+best_cp <- best_cp %>% left_join(gdd_seas[,c("Site", "dd_fn1")], by = c("SiteID" = "Site"))
+
+mod <- lm(best_cp ~ (dd_fn1 + cdl_sd + lambda + as.factor(penalty))^2, data = best_cp)
+mod <- lmer(best_cp ~ (dd_fn1 + cdl_sd + lambda + as.factor(penalty))^2 + (1|SiteID), data = best_cp)
+
+anova(mod)
+car::Anova(mod, type = 2)
+
+bestmod <- step(mod, direction = "backward")
+
+
+# Plot GC vs Best CP ----
+optcp <- read.csv("data/DCA_CP.csv", header = TRUE) 
+optcp <- optcp[-9, ] %>% 
+  group_by(SiteID) %>% 
+  arrange(-Year) %>% 
+  slice(1)
+
+optcp <- read.csv("data/GCA_CP_2019.csv", header = TRUE)
+
+cpdistrib <- lapply(1:nrow(optcp), FUN = function(x){
+  tmp <- data.frame(SiteID = optcp$mods.population[x],
+                    cp = seq(10,20,length.out = 1000),
+                    dens = dnorm(seq(10,20,length.out = 1000), mean = optcp$cp_mean[x], sd = optcp$cp_sd[x]))
+  return(tmp)
+})
+
+cpdist <- bind_rows(cpdistrib) %>% 
+  left_join(optcp, by = c("SiteID" = "mods.population")) %>% 
+  left_join(sites, by = c("SiteID" = "ID")) %>% 
+  filter(cp > cp_mean - 2*cp_sd & cp < cp_mean + 2*cp_sd) %>% 
+  mutate(SiteID = forcats::fct_reorder(SiteID, y, .desc = FALSE))
+
+
+library(ggridges)
+
+plt <- ggplot(cpdist, aes(x = cp, y = SiteID, height = dens)) +
+  geom_ridgeline(scale = 1, alpha = .3) + 
+  scale_x_continuous(breaks = c(10, 12, 14, 16, 18, 20)) +
+  geom_point(data = best_cp, #%>% filter(cdl_sd == 0, lambda == 1.5, penalty == "ann_lam_adj_5"),
+             aes(x = best_cp, y = SiteID), size = 3, alpha = .1, inherit.aes = FALSE) +
+  scale_y_discrete(expand = expand_scale(mult = c(0.01, .1))) +
+  xlab("Photoperiod threshold (day hours)") +
+  ylab(NULL)
+plt
+
+ggsave(filename = "GCA_CPcompare.png", plot = plt, device = "png", width = 6, height = 8, units = "in")
+
+
+
+# better than lat or gdd?
+
+dat <- optcp %>% 
+  left_join(gdd_seas[,c("Site", "dd_fn1")], by = c("SiteID" = "Site")) %>% 
+  left_join(best_cp %>% filter(cdl_sd == 0.5, lambda == 1.5, penalty == "ann_lam_adj_5")) %>% 
+  left_join(sites, by = c("SiteID" = "ID"))
+
+
+summary(lm(cp_mean ~ y, data = dat))
+summary(lm(cp_mean ~ y + dd_fn1, data = dat))
+summary(lm(cp_mean ~ y * dd_fn1, data = dat))
+summary(lm(cp_mean ~ best_cp, data = dat))
+
+
+
+
 
 year_lam <- res %>% 
   left_join(maxvolt, by = c("Year" = "year", "SiteID" = "Site")) %>% 
@@ -893,4 +1000,120 @@ plt <- ggplot(geom_lam, aes(x = CDL, y = gen_lambda, fill = log(mean_annual_lamb
 plt
 
 ggsave(filename = paste0("GCA_meanlambda_", site, ".png"), plot = plt, device = "png", width = 9, height = 6, units = "in")
+
+
+
+
+
+
+# GRAVEYARD----
+# Compare to cohort model results
+
+# UNKNOWN: Does voltinism from IBM == voltinism from cohort model?
+# Cohort has weighted completed x weighted diapause, is this the same as
+# weighted mean of [completed(1) x diapause(1), completed(2) x diapause(2), ...]?
+# Go to cohort model and test by putting voltinism calc (1st for each cohort)
+# in matrix of weighted results 
+
+coh <- readRDS("site_array_gca_17coh.rds")
+
+# extract gdd, voltinism, lost, 
+cohlist <- list()
+for (w in 1:53){
+  
+  coh_att <- data.frame(coh[, w, 7,])
+  names(coh_att) <- paste0("X", 2016:2020)
+  coh_att <- coh_att %>% 
+    mutate(ID = sites$ID) %>% 
+    tidyr::gather(year, attempted, X2016:X2020) %>% 
+    mutate(year = gsub(pattern = "X", replacement = "", x = year, fixed = TRUE),
+           week = w)
+  
+  
+  coh_volt <- data.frame(coh[, w, 8,])
+  names(coh_volt) <- paste0("X", 2016:2020)
+  coh_volt <- coh_volt %>% 
+    mutate(ID = sites$ID) %>% 
+    tidyr::gather(year, completed, X2016:X2020) %>% 
+    mutate(year = gsub(pattern = "X", replacement = "", x = year, fixed = TRUE),
+           week = w)
+  
+  coh_wvolt <- data.frame(coh[, w, 9,])
+  names(coh_wvolt) <- paste0("X", 2016:2020)
+  coh_wvolt <- coh_wvolt %>% 
+    mutate(ID = sites$ID) %>% 
+    tidyr::gather(year, wvolt, X2016:X2020) %>% 
+    mutate(year = gsub(pattern = "X", replacement = "", x = year, fixed = TRUE),
+           week = w)
+  
+  coh_diap <- data.frame(coh[, w, 10,])
+  names(coh_diap) <- paste0("X", 2016:2020)
+  coh_diap <- coh_diap %>% 
+    mutate(ID = sites$ID) %>% 
+    tidyr::gather(year, diap, X2016:X2020) %>% 
+    mutate(year = gsub(pattern = "X", replacement = "", x = year, fixed = TRUE),
+           week = w)
+  
+  coh_all <-  coh_att %>% 
+    left_join(coh_volt) %>% 
+    left_join(coh_wvolt) %>% 
+    left_join(coh_diap)
+  cohlist[[w]] <- coh_all
+}
+cohplot <- bind_rows(cohlist) %>% 
+  tidyr::gather(var, val, attempted, completed, wvolt, diap)
+
+# plot helps show that diapause * completed doesn't make sense, if 
+
+ggplot(cohplot, aes(x = week, y = val, group = ID, color = ID)) +
+  geom_line() +
+  facet_grid(var ~ year, scales = "free") +
+  theme_bw(base_size = 14)
+
+# best diapause cutoff to make IBM??
+# cohplot <- bind_rows(cohlist)
+# ggplot(cohplot, aes(x = week, y = ifelse(diap > .75, NA, 1) * completed, group = ID, color = ID)) +
+#   geom_line(aes(size = 1-diap)) +
+#   facet_grid(. ~ year) +
+#   theme_bw(base_size = 14)
+# 
+# coh_volt <- cohplot %>% 
+#   mutate(d25 = ifelse(diap > .25, NA, 1) * completed,
+#          d50 = ifelse(diap > .5, NA, 1) * completed,
+#          d75 = ifelse(diap > .75, NA, 1) * completed,
+#          d90 = ifelse(diap > .9, NA, 1) * completed,
+#          d95 = ifelse(diap > .95, NA, 1) * completed,
+#          d98 = ifelse(diap > .98, NA, 1) * completed) %>% 
+#   group_by(ID, year) %>% 
+#   summarise_all(max, na.rm = TRUE) %>% 
+#   arrange(year, ID)
+# 
+# # good correlation between the cohort and IBM voltinism estimates now
+# # but what does it really mean? 
+# # is this just weighted voltinism? Why does it work for the cohort model?
+# coh_volt <- coh_volt %>% ungroup() %>%  mutate(res$voltinism)
+# plot(coh_volt$`res$voltinism`, coh_volt$d95)
+# abline(0, 1)
+
+# this matches IBM well if attempted used instead of completed, why?
+cohdf <- bind_rows(cohlist) %>% 
+  group_by(ID, year) %>% 
+  arrange(week) %>% 
+  # mutate(diapnewgen = cumsum(c(0, diff(attempted)) * (1-diap))) %>% 
+  filter(week == 53) %>% 
+  ungroup() %>% 
+  rename(SiteID = ID, Year = year) %>% 
+  mutate(Year = as.numeric(Year),
+         mismatch = wvolt - completed)
+
+ind_diap <- res %>% 
+  rowwise() %>% 
+  mutate(ind_comp = sum(c(comp_1, comp_2, comp_3, comp_4), na.rm = TRUE),
+         ind_diap = ind_comp / (ind_comp + lost)) %>% 
+  left_join(cohdf)
+
+plot(ind_diap$voltinism, ind_diap$wvolt)
+abline(0, 1)
+plot(ind_diap$ind_diap, ind_diap$diap)
+abline(0, 1)
 

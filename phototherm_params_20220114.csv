@@ -1,0 +1,11 @@
+species,site,x,y,biotype,cp_mean,cp_sd
+GCA,JBLM,-122.545,47.114,Bellingham,16.6,1
+GCA,JBLM,-122.545,47.114,Yakima,15.9,1
+GCA,JBLM,-122.545,47.114,Montesano,16.2,1
+GCA,JBLM,-122.545,47.114,Sutherlin,15.1,1
+GCA,Yakima,-119.99,46.76,Yakima,15.9,1
+GCA,Yakima,-119.99,46.76,Sutherlin,15.1,1
+GCA,FtDrum,-75.715,44.1078,Ft. Drum,15.4,1
+GCA,FtDrum,-75.715,44.1078,Sutherlin,15.1,1
+GCA,WestPoint,-73.992,41.3835,West Point,15.8,1
+GCA,WestPoint,-73.992,41.3835,Sutherlin,15.1,1
